@@ -369,7 +369,7 @@ export default {
         }
 
         if (!apiKey) {
-          apiKey = '7f5ff2c0c4a6e2ec642a8dc8b2fe4dc5'
+          apiKey = 'key'
           console.warn('환경변수에서 KAKAO API 키를 찾을 수 없어 기본 키를 사용합니다.')
         }
 
