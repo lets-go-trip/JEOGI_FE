@@ -1,0 +1,657 @@
+<script>
+import { ref } from 'vue'
+import NavBar from '@/components/common/NavBar.vue'
+import { searchAttractions } from '@/api/attractions'
+
+export default {
+  name: 'SearchView',
+  components: {
+    NavBar,
+  },
+  setup() {
+    const searchTerm = ref('')
+    const searchResults = ref([])
+    const isLoading = ref(false)
+    const errorMessage = ref('')
+    const selectedRegion = ref('all')
+    const map = ref(null)
+    const markers = ref([])
+
+    return {
+      searchTerm,
+      searchResults,
+      isLoading,
+      errorMessage,
+      selectedRegion,
+      map,
+      markers,
+    }
+  },
+  computed: {
+    metropolitanOptions() {
+      return [
+        { value: 'all', label: '전체' },
+        { value: '1', label: '서울특별시' },
+        { value: '2', label: '부산광역시' },
+        { value: '3', label: '대구광역시' },
+        { value: '4', label: '인천광역시' },
+        { value: '5', label: '광주광역시' },
+        { value: '6', label: '대전광역시' },
+        { value: '7', label: '울산광역시' },
+        { value: '8', label: '세종특별자치시' },
+        { value: '9', label: '경기도' },
+        { value: '10', label: '강원도' },
+        { value: '11', label: '충청북도' },
+        { value: '12', label: '충청남도' },
+        { value: '13', label: '전라북도' },
+        { value: '14', label: '전라남도' },
+        { value: '15', label: '경상북도' },
+        { value: '16', label: '경상남도' },
+        { value: '17', label: '제주특별자치도' },
+      ]
+    },
+  },
+  data() {
+    return {
+      resizeHandler: null,
+    }
+  },
+  methods: {
+    async handleSearch() {
+      this.isLoading = true
+      this.errorMessage = ''
+      this.clearMarkers()
+
+      const params = {
+        query: this.searchTerm,
+        metropolitanId: this.selectedRegion !== 'all' ? this.selectedRegion : null,
+      }
+
+      try {
+        const response = await searchAttractions(params)
+        this.searchResults = response.data.attractions || []
+        this.updateMap()
+      } catch (error) {
+        console.error('Search error:', error)
+        this.errorMessage = '검색 중 오류가 발생했습니다. 다시 시도해주세요.'
+        this.searchResults = []
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    initializeMap() {
+      try {
+        if (window.kakao && window.kakao.maps) {
+          console.log('Initializing Kakao map...')
+          const container = document.getElementById('kakao-map')
+
+          // Check if container exists
+          if (!container) {
+            console.error('Map container element not found')
+            this.errorMessage = '지도 컨테이너를 찾을 수 없습니다.'
+            return
+          }
+
+          const options = {
+            center: new window.kakao.maps.LatLng(36.2, 127.9), // Center of Korea
+            level: 13,
+          }
+
+          this.map = new window.kakao.maps.Map(container, options)
+
+          // Add terrain overlay for better visualization
+          this.map.addOverlayMapTypeId(window.kakao.maps.MapTypeId.TERRAIN)
+
+          // Add resize handler to ensure map renders correctly after window resize
+          this.setupResizeHandler()
+
+          // Force relayout after a short delay to ensure proper rendering
+          setTimeout(() => {
+            if (this.map) {
+              this.map.relayout()
+              console.log('Forced map relayout')
+            }
+          }, 500)
+
+          console.log('Map initialized successfully')
+        } else {
+          console.error('Kakao maps not loaded')
+          this.displayMapError('지도를 불러오는데 실패했습니다. 잠시 후 다시 시도해주세요.')
+        }
+      } catch (error) {
+        console.error('Error initializing map:', error)
+        this.displayMapError('지도를 불러오는데 오류가 발생했습니다: ' + error.message)
+      }
+    },
+
+    setupResizeHandler() {
+      // Remove existing handler if it exists
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler)
+      }
+
+      // Create and attach new handler
+      this.resizeHandler = () => {
+        if (this.map) {
+          console.log('Window resized, forcing map relayout')
+          this.map.relayout()
+        }
+      }
+
+      window.addEventListener('resize', this.resizeHandler)
+    },
+
+    displayMapError(message) {
+      this.errorMessage = message
+      // Create a fallback map container with an error message
+      const container = document.getElementById('kakao-map')
+      if (container) {
+        container.innerHTML = `
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; background-color: #f8f9fa; padding: 2rem; text-align: center;">
+            <h3 style="color: #dc3545; margin-bottom: 1rem;">지도 로딩 실패</h3>
+            <p>${message}</p>
+            <p>새로고침을 하거나 잠시 후 다시 시도해주세요.</p>
+            <button 
+              style="margin-top: 1rem; padding: 0.5rem 1rem; background-color: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer;"
+              onclick="location.reload()"
+            >새로고침</button>
+          </div>
+        `
+      }
+    },
+
+    clearMarkers() {
+      this.markers.forEach((marker) => marker.setMap(null))
+      this.markers = []
+    },
+
+    updateMap() {
+      if (!this.map || this.searchResults.length === 0) return
+
+      this.clearMarkers()
+
+      const bounds = new window.kakao.maps.LatLngBounds()
+
+      this.searchResults.forEach((attraction) => {
+        if (attraction.mapx && attraction.mapy) {
+          const position = new window.kakao.maps.LatLng(
+            parseFloat(attraction.mapy),
+            parseFloat(attraction.mapx),
+          )
+
+          const marker = new window.kakao.maps.Marker({
+            map: this.map,
+            position: position,
+            title: attraction.title,
+          })
+
+          this.markers.push(marker)
+          bounds.extend(position)
+
+          const infowindow = new window.kakao.maps.InfoWindow({
+            content: `<div style="padding:5px;width:150px;text-align:center;">${attraction.title}</div>`,
+          })
+
+          window.kakao.maps.event.addListener(marker, 'mouseover', () => {
+            infowindow.open(this.map, marker)
+          })
+
+          window.kakao.maps.event.addListener(marker, 'mouseout', () => {
+            infowindow.close()
+          })
+
+          window.kakao.maps.event.addListener(marker, 'click', () => {
+            this.$router.push(`/attraction/${attraction.id}`)
+          })
+        }
+      })
+
+      if (!bounds.isEmpty()) {
+        this.map.setBounds(bounds)
+
+        // Force relayout after setting bounds for better rendering
+        setTimeout(() => {
+          if (this.map) {
+            this.map.relayout()
+          }
+        }, 100)
+      }
+    },
+
+    loadKakaoMapsScript() {
+      return new Promise((resolve, reject) => {
+        if (window.kakao && window.kakao.maps) {
+          console.log('Kakao Maps already loaded, using existing instance')
+          resolve()
+          return
+        }
+
+        // Create script element for the Kakao Maps SDK
+        const script = document.createElement('script')
+
+        // Use https protocol explicitly and add a timestamp to prevent caching issues
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.VUE_APP_KAKAO_API_KEY}&libraries=services&autoload=false&t=${new Date().getTime()}`
+        console.log('Loading Kakao Maps with URL:', script.src)
+
+        script.onload = () => {
+          // Check if kakao is loaded
+          if (window.kakao) {
+            console.log('Kakao SDK loaded successfully')
+
+            window.kakao.maps.load(() => {
+              console.log('Kakao maps loaded successfully')
+              resolve()
+            })
+          } else {
+            console.error('Kakao SDK failed to initialize')
+            reject(new Error('Kakao SDK not initialized'))
+          }
+        }
+
+        script.onerror = (e) => {
+          console.error('Error loading Kakao Maps script:', e)
+          reject(e)
+        }
+
+        document.head.appendChild(script)
+      })
+    },
+
+    cleanupResources() {
+      // Remove event listeners when component is destroyed
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler)
+        this.resizeHandler = null
+      }
+
+      // Clear markers
+      this.clearMarkers()
+
+      // Clear map reference
+      this.map = null
+    },
+  },
+  async mounted() {
+    try {
+      await this.loadKakaoMapsScript()
+      this.initializeMap()
+
+      // In case the map didn't load properly the first time, try once more after a delay
+      if (!this.map) {
+        console.log('Retrying map initialization after delay...')
+        setTimeout(async () => {
+          try {
+            await this.loadKakaoMapsScript()
+            this.initializeMap()
+          } catch (error) {
+            console.error('Map retry failed:', error)
+          }
+        }, 1000)
+      }
+    } catch (error) {
+      console.error('Failed to load Kakao Maps:', error)
+      this.errorMessage = '지도를 불러오는 중 오류가 발생했습니다.'
+    }
+  },
+  beforeUnmount() {
+    // Clean up resources when component is unmounted
+    this.cleanupResources()
+  },
+}
+</script>
+
+<template>
+  <NavBar />
+  <div class="search-view">
+    <div class="search-header">
+      <div class="container">
+        <h1 class="search-title">여행지 검색</h1>
+        <div class="search-form">
+          <div class="search-form-row">
+            <div class="search-form-field region-select">
+              <select v-model="selectedRegion" class="form-control">
+                <option
+                  v-for="option in metropolitanOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+
+            <div class="search-form-field keyword-input">
+              <input
+                v-model="searchTerm"
+                type="text"
+                class="form-control"
+                placeholder="여행지 이름이나 키워드를 입력하세요"
+                @keyup.enter="handleSearch"
+              />
+            </div>
+
+            <div class="search-form-field search-button">
+              <button @click="handleSearch" class="btn btn-primary" :disabled="isLoading">
+                {{ isLoading ? '검색 중...' : '검색' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="search-content">
+      <div class="container">
+        <div class="row">
+          <div class="col-md-8">
+            <div id="kakao-map" class="map-container"></div>
+          </div>
+
+          <div class="col-md-4">
+            <div class="search-results">
+              <h2 class="results-title">검색 결과</h2>
+
+              <div v-if="errorMessage" class="alert alert-danger">
+                {{ errorMessage }}
+              </div>
+
+              <div v-if="isLoading" class="loading-indicator">
+                <p>검색 중...</p>
+              </div>
+
+              <div v-else-if="searchResults.length === 0" class="no-results">
+                <p>검색 결과가 없습니다.</p>
+              </div>
+
+              <div v-else class="results-list">
+                <div
+                  v-for="result in searchResults"
+                  :key="result.id"
+                  class="result-item"
+                  @click="$router.push(`/attraction/${result.id}`)"
+                >
+                  <h3 class="result-title">{{ result.title }}</h3>
+                  <p class="result-address">{{ result.addr1 }} {{ result.addr2 }}</p>
+                  <div class="result-actions">
+                    <router-link :to="`/attraction/${result.id}`" class="btn btn-outline btn-sm"
+                      >상세 보기</router-link
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.search-view {
+  min-height: 100vh;
+  background-color: var(--background-color);
+}
+
+.search-header {
+  background-color: var(--primary-color);
+  padding: 3rem 0;
+  color: white;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.search-title {
+  text-align: center;
+  margin-bottom: 2rem;
+  font-weight: 700;
+  font-size: 2.8rem;
+  letter-spacing: -0.5px;
+}
+
+.search-form {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.search-form-row {
+  display: flex;
+  margin: 0 -0.5rem;
+  align-items: center;
+}
+
+.search-form-field {
+  padding: 0 0.5rem;
+}
+
+.region-select {
+  width: 25%;
+}
+
+.region-select select {
+  height: 48px;
+  font-size: 1.05rem;
+  border-radius: 6px;
+  border: none;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.keyword-input {
+  width: 60%;
+}
+
+.keyword-input input {
+  height: 48px;
+  font-size: 1.05rem;
+  border-radius: 6px;
+  padding: 0 15px;
+  border: none;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.search-button {
+  width: 15%;
+}
+
+.search-button button {
+  height: 48px;
+  width: 100%;
+  font-size: 1.05rem;
+  font-weight: 500;
+  border-radius: 6px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.search-content {
+  padding: 2rem 0;
+}
+
+.map-container {
+  width: 100%;
+  height: 600px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+  margin-bottom: 1.5rem;
+  border: 1px solid #eaeaea;
+  background-color: #f7f7f7; /* Light background for loading state */
+  position: relative; /* For error overlay */
+}
+
+.search-results {
+  background-color: white;
+  border-radius: 12px;
+  padding: 1.8rem;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+  height: 600px;
+  overflow-y: auto;
+  border: 1px solid #eaeaea;
+}
+
+.results-title {
+  font-size: 1.7rem;
+  margin-bottom: 1.8rem;
+  color: var(--primary-color);
+  font-weight: 600;
+  border-bottom: 2px solid var(--primary-light);
+  padding-bottom: 0.8rem;
+}
+
+.result-item {
+  padding: 1.2rem;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  margin-bottom: 0.8rem;
+}
+
+.result-item:hover {
+  background-color: rgba(78, 205, 196, 0.1);
+  transform: translateY(-3px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+}
+
+.result-title {
+  font-size: 1.2rem;
+  color: var(--primary-dark);
+  margin-bottom: 0.7rem;
+  font-weight: 600;
+}
+
+.result-address {
+  color: var(--text-light);
+  font-size: 0.95rem;
+  margin-bottom: 0.7rem;
+  line-height: 1.4;
+}
+
+.result-actions {
+  margin-top: 0.8rem;
+}
+
+.result-actions .btn {
+  transition: all 0.2s ease;
+  padding: 0.35rem 0.8rem;
+}
+
+.result-actions .btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.no-results,
+.loading-indicator {
+  text-align: center;
+  padding: 2rem 0;
+  color: var(--text-light);
+}
+
+.alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #f5c6cb;
+  border-radius: 0.25rem;
+}
+
+@media (min-width: 1200px) {
+  .search-content {
+    padding: 4rem 0;
+  }
+
+  .map-container {
+    height: 650px;
+  }
+
+  .search-results {
+    height: 650px;
+  }
+}
+
+@media (min-width: 992px) and (max-width: 1199px) {
+  .search-content {
+    padding: 3.5rem 0;
+  }
+
+  .map-container {
+    height: 600px;
+  }
+
+  .search-results {
+    height: 600px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  .search-title {
+    font-size: 2.4rem;
+  }
+
+  .search-content {
+    padding: 2.5rem 0;
+  }
+
+  .map-container {
+    height: 500px;
+    margin-bottom: 2rem;
+  }
+
+  .search-results {
+    height: 500px;
+  }
+}
+
+@media (max-width: 767px) {
+  .search-header {
+    padding: 2rem 0;
+  }
+
+  .search-title {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .search-form-row {
+    flex-direction: column;
+  }
+
+  .search-form-field {
+    width: 100% !important;
+    margin-bottom: 0.8rem;
+  }
+
+  .search-button button,
+  .keyword-input input,
+  .region-select select {
+    height: 44px;
+    font-size: 1rem;
+  }
+
+  .map-container {
+    height: 400px;
+    border-radius: 8px;
+  }
+
+  .search-results {
+    height: auto;
+    max-height: 450px;
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+
+  .results-title {
+    font-size: 1.4rem;
+    margin-bottom: 1.2rem;
+  }
+
+  .result-item {
+    padding: 1rem;
+  }
+}
+</style>
