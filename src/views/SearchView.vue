@@ -1,3 +1,448 @@
+<script>
+import { ref } from 'vue'
+import NavBar from '@/components/common/NavBar.vue'
+import { searchAttractions, getLocals, getContentsType } from '@/api/attractions'
+
+export default {
+  name: 'SearchView',
+  components: {
+    NavBar,
+  },
+  setup() {
+    const searchTerm = ref('')
+    const searchResults = ref([])
+    const isLoading = ref(false)
+    const errorMessage = ref('')
+    const selectedRegion = ref('all')
+    const selectedLocal = ref('all')
+    const selectedContentType = ref('all')
+    const localOptions = ref([])
+    const contentTypeOptions = ref([])
+    const isLoadingLocals = ref(false)
+    const isLoadingContentTypes = ref(false)
+    const map = ref(null)
+    const markers = ref([])
+
+    return {
+      searchTerm,
+      searchResults,
+      isLoading,
+      errorMessage,
+      selectedRegion,
+      selectedLocal,
+      selectedContentType,
+      localOptions,
+      contentTypeOptions,
+      isLoadingLocals,
+      isLoadingContentTypes,
+      map,
+      markers,
+    }
+  },
+  computed: {
+    metropolitanOptions() {
+      return [
+        { value: 'all', label: '전체' },
+        { value: '1', label: '서울특별시' },
+        { value: '2', label: '인천광역시' },
+        { value: '3', label: '대전광역시' },
+        { value: '4', label: '대구광역시' },
+        { value: '5', label: '광주광역시' },
+        { value: '6', label: '부산광역시' },
+        { value: '7', label: '울산광역시' },
+        { value: '8', label: '세종특별자치시' },
+        { value: '31', label: '경기도' },
+        { value: '32', label: '강원도' },
+        { value: '33', label: '충청북도' },
+        { value: '34', label: '충청남도' },
+        { value: '35', label: '경상북도' },
+        { value: '36', label: '경상남도' },
+        { value: '37', label: '전라북도' },
+        { value: '38', label: '전라남도' },
+        { value: '39', label: '제주특별자치도' },
+      ]
+    },
+  },
+  data() {
+    return {
+      resizeHandler: null,
+      mapInitialized: false,
+    }
+  },
+  methods: {
+    async handleSearch() {
+      this.isLoading = true
+      this.errorMessage = ''
+      this.clearMarkers()
+
+      const params = {
+        //query: this.searchTerm,
+        metropolitanId: this.selectedRegion !== 'all' ? this.selectedRegion : null,
+        localId: this.selectedLocal !== 'all' ? this.selectedLocal : null,
+        contentTypeId: this.selectedContentType !== 'all' ? this.selectedContentType : null,
+        isRangeSearch: true,
+        latitude: this.map.getCenter().getLat(),
+        longitude: this.map.getCenter().getLng(),
+        range: 25,
+      }
+
+      try {
+        const response = await searchAttractions(params)
+        this.searchResults = response.data.attractions || []
+        this.updateMap()
+      } catch (error) {
+        console.error('Search error:', error)
+        this.errorMessage = '검색 중 오류가 발생했습니다. 다시 시도해주세요.'
+        this.searchResults = []
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    // 지역 선택 변경 처리
+    async onRegionChange() {
+      console.log('지역 변경됨:', this.selectedRegion)
+
+      // 로컬 선택 초기화
+      this.selectedLocal = 'all'
+      this.localOptions = []
+
+      // '전체' 선택 시 로컬 옵션 비우기
+      if (this.selectedRegion === 'all') {
+        return
+      }
+
+      // 선택된 지역의 로컬 옵션 로드
+      await this.loadLocalOptions(this.selectedRegion)
+    },
+
+    // 로컬 옵션 로드
+    async loadLocalOptions(metropolitanCode) {
+      this.isLoadingLocals = true
+
+      try {
+        const response = await getLocals(metropolitanCode)
+
+        if (response.status != 200) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = response.data
+
+        // API 응답 구조에 따라 locals 배열 매핑
+        if (data.locals && Array.isArray(data.locals)) {
+          this.localOptions = data.locals.map(local => ({
+            value: local.code,
+            label: local.name
+          }))
+        } else {
+          console.warn('예상하지 못한 API 응답 구조:', data)
+          this.localOptions = []
+        }
+
+        console.log(`${metropolitanCode}에 대한 로컬 옵션 로드됨:`, this.localOptions)
+
+      } catch (error) {
+        console.error('로컬 옵션 로딩 실패:', error)
+        this.localOptions = []
+        this.errorMessage = '지역 정보를 불러오는 중 오류가 발생했습니다.'
+      } finally {
+        this.isLoadingLocals = false
+      }
+    },
+
+    // 여행지 유형 옵션 로드
+    async loadContentTypeOptions() {
+      this.isLoadingContentTypes = true
+
+      try {
+        const response = await getContentsType()
+
+        if (response.status != 200) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = response.data
+
+        // API 응답 구조에 따라 조정 (응답 구조를 모르므로 여러 케이스 대응)
+        let contentTypes = []
+
+        if (data.contentTypes && Array.isArray(data.contentTypes)) {
+          contentTypes = data.contentTypes
+        } else if (data.contents && Array.isArray(data.contents)) {
+          contentTypes = data.contents
+        } else if (data.types && Array.isArray(data.types)) {
+          contentTypes = data.types
+        } else if (Array.isArray(data)) {
+          contentTypes = data
+        } else {
+          console.warn('예상하지 못한 여행지 유형 API 응답 구조:', data)
+          contentTypes = []
+        }
+
+        this.contentTypeOptions = contentTypes.map(type => ({
+          value: type.id || type.code || type.typeId,
+          label: type.name || type.typeName || type.title
+        }))
+
+        console.log('여행지 유형 옵션 로드됨:', this.contentTypeOptions)
+
+      } catch (error) {
+        console.error('여행지 유형 옵션 로딩 실패:', error)
+        this.contentTypeOptions = []
+
+        // 개발 환경에서 mock 데이터 사용
+        if (import.meta.env?.DEV) {
+          this.contentTypeOptions = this.getMockContentTypeOptions()
+          console.log('Mock 여행지 유형 데이터 사용:', this.contentTypeOptions)
+        }
+      } finally {
+        this.isLoadingContentTypes = false
+      }
+    },
+
+    // 개발용 Mock 여행지 유형 데이터
+    getMockContentTypeOptions() {
+      return [
+        { value: '12', label: '관광지' },
+        { value: '14', label: '문화시설' },
+        { value: '15', label: '축제공연행사' },
+        { value: '25', label: '여행코스' },
+        { value: '28', label: '레포츠' },
+        { value: '32', label: '숙박' },
+        { value: '38', label: '쇼핑' },
+        { value: '39', label: '음식점' },
+      ]
+    },
+
+    initializeMap() {
+      try {
+        if (window.kakao && window.kakao.maps) {
+          console.log('Initializing Kakao map...')
+          const container = document.getElementById('kakao-map')
+
+          if (!container) {
+            console.error('Map container element not found')
+            this.errorMessage = '지도 컨테이너를 찾을 수 없습니다.'
+            return
+          }
+
+          const options = {
+            center: new window.kakao.maps.LatLng(36.2, 127.9),
+            level: 13,
+          }
+
+          this.map = new window.kakao.maps.Map(container, options)
+          this.map.addOverlayMapTypeId(window.kakao.maps.MapTypeId.TERRAIN)
+          this.setupResizeHandler()
+
+          setTimeout(() => {
+            if (this.map) {
+              this.map.relayout()
+              console.log('Forced map relayout')
+            }
+          }, 500)
+
+          console.log('Map initialized successfully')
+          this.mapInitialized = true
+        } else {
+          console.error('Kakao maps not loaded')
+          this.displayMapError('지도를 불러오는데 실패했습니다. 잠시 후 다시 시도해주세요.')
+        }
+      } catch (error) {
+        console.error('Error initializing map:', error)
+        this.displayMapError('지도를 불러오는데 오류가 발생했습니다: ' + error.message)
+      }
+    },
+
+    setupResizeHandler() {
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler)
+      }
+
+      this.resizeHandler = () => {
+        if (this.map) {
+          console.log('Window resized, forcing map relayout')
+          this.map.relayout()
+        }
+      }
+
+      window.addEventListener('resize', this.resizeHandler)
+    },
+
+    displayMapError(message) {
+      this.errorMessage = message
+      const container = document.getElementById('kakao-map')
+      if (container) {
+        container.innerHTML = `
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; background-color: #f8f9fa; padding: 2rem; text-align: center;">
+            <h3 style="color: #dc3545; margin-bottom: 1rem;">지도 로딩 실패</h3>
+            <p>${message}</p>
+            <p>새로고침을 하거나 잠시 후 다시 시도해주세요.</p>
+            <button
+              style="margin-top: 1rem; padding: 0.5rem 1rem; background-color: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer;"
+              onclick="location.reload()"
+            >새로고침</button>
+          </div>
+        `
+      }
+    },
+
+    clearMarkers() {
+      this.markers.forEach((marker) => marker.setMap(null))
+      this.markers = []
+    },
+
+    updateMap() {
+      if (!this.map || this.searchResults.length === 0) return
+
+      this.clearMarkers()
+
+      const bounds = new window.kakao.maps.LatLngBounds()
+
+      this.searchResults.forEach((attraction) => {
+        if (attraction.latitude && attraction.longitude) {
+          const position = new window.kakao.maps.LatLng(
+            parseFloat(attraction.latitude),
+            parseFloat(attraction.longitude),
+          )
+
+          const marker = new window.kakao.maps.Marker({
+            map: this.map,
+            position: position,
+            title: attraction.title,
+          })
+
+          this.markers.push(marker)
+          bounds.extend(position)
+
+          const infowindow = new window.kakao.maps.InfoWindow({
+            content: `<div style="padding:5px;width:150px;text-align:center;">${attraction.title}</div>`,
+          })
+
+          window.kakao.maps.event.addListener(marker, 'mouseover', () => {
+            infowindow.open(this.map, marker)
+          })
+
+          window.kakao.maps.event.addListener(marker, 'mouseout', () => {
+            infowindow.close()
+          })
+
+          window.kakao.maps.event.addListener(marker, 'click', () => {
+            this.$router.push(`/attraction/${attraction.id}`)
+          })
+        }
+      })
+
+      if (!bounds.isEmpty()) {
+        this.map.setBounds(bounds)
+        setTimeout(() => {
+          if (this.map) {
+            this.map.relayout()
+          }
+        }, 100)
+      }
+    },
+
+    loadKakaoMapsScript() {
+      return new Promise((resolve, reject) => {
+        if (window.kakao && window.kakao.maps) {
+          console.log('Kakao Maps already loaded, using existing instance')
+          resolve()
+          return
+        }
+
+        const script = document.createElement('script')
+
+        // 환경변수에서 API 키 가져오기
+        let apiKey = ''
+        try {
+          // Vite 환경
+          apiKey = import.meta.env?.VITE_KAKAO_API_KEY
+        } catch (e) {
+          try {
+            // Vue CLI 환경 (fallback)
+            apiKey = process.env?.VUE_APP_KAKAO_API_KEY
+          } catch (e2) {
+            console.warn('환경변수를 읽을 수 없습니다. 기본 API 키를 사용합니다.')
+          }
+        }
+
+        if (!apiKey) {
+          apiKey = '7f5ff2c0c4a6e2ec642a8dc8b2fe4dc5'
+          console.warn('환경변수에서 KAKAO API 키를 찾을 수 없어 기본 키를 사용합니다.')
+        }
+
+        const timestamp = new Date().getTime()
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&libraries=services&autoload=false&t=${timestamp}`
+        console.log('Loading Kakao Maps with URL:', script.src)
+
+        script.onload = () => {
+          if (window.kakao) {
+            console.log('Kakao SDK loaded successfully')
+            window.kakao.maps.load(() => {
+              console.log('Kakao maps loaded successfully')
+              resolve()
+            })
+          } else {
+            console.error('Kakao SDK failed to initialize')
+            reject(new Error('Kakao SDK not initialized'))
+          }
+        }
+
+        script.onerror = (error) => {
+          console.error('Error loading Kakao Maps script:', error)
+          reject(new Error('Kakao Maps 스크립트 로딩 실패'))
+        }
+
+        document.head.appendChild(script)
+      })
+    },
+
+    cleanupResources() {
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler)
+        this.resizeHandler = null
+      }
+
+      this.clearMarkers()
+      this.map = null
+    },
+  },
+
+  async mounted() {
+    console.log('SearchView 컴포넌트 마운트됨')
+
+    // 여행지 유형 옵션 로드 (독립적으로 실행)
+    this.loadContentTypeOptions()
+
+    try {
+      await this.loadKakaoMapsScript()
+      this.initializeMap()
+
+      if (!this.map) {
+        console.log('Retrying map initialization after delay...')
+        setTimeout(async () => {
+          try {
+            await this.loadKakaoMapsScript()
+            this.initializeMap()
+          } catch (error) {
+            console.error('Map retry failed:', error)
+          }
+        }, 1000)
+      }
+    } catch (error) {
+      console.error('Failed to load Kakao Maps:', error)
+      this.errorMessage = '지도를 불러오는 중 오류가 발생했습니다.'
+    }
+  },
+
+  beforeUnmount() {
+    this.cleanupResources()
+  },
+}
+</script>
+
 <template>
   <NavBar />
   <div class="search-view">
@@ -7,13 +452,51 @@
         <div class="search-form">
           <div class="search-form-row">
             <div class="search-form-field region-select">
-              <select v-model="selectedRegion" class="form-control">
+              <select v-model="selectedRegion" @change="onRegionChange" class="form-control">
                 <option
                   v-for="option in metropolitanOptions"
                   :key="option.value"
                   :value="option.value"
                 >
                   {{ option.label }}
+                </option>
+              </select>
+            </div>
+
+            <div class="search-form-field local-select">
+              <select
+                v-model="selectedLocal"
+                class="form-control"
+                :disabled="selectedRegion === 'all' || isLoadingLocals"
+              >
+                <option value="all">
+                  {{ isLoadingLocals ? '로딩 중...' : '전체 지역' }}
+                </option>
+                <option
+                  v-for="local in localOptions"
+                  :key="local.value"
+                  :value="local.value"
+                >
+                  {{ local.label }}
+                </option>
+              </select>
+            </div>
+
+            <div class="search-form-field content-type-select">
+              <select
+                v-model="selectedContentType"
+                class="form-control"
+                :disabled="isLoadingContentTypes"
+              >
+                <option value="all">
+                  {{ isLoadingContentTypes ? '로딩 중...' : '전체 유형' }}
+                </option>
+                <option
+                  v-for="contentType in contentTypeOptions"
+                  :key="contentType.value"
+                  :value="contentType.value"
+                >
+                  {{ contentType.label }}
                 </option>
               </select>
             </div>
@@ -40,73 +523,9 @@
 
     <div class="search-content">
       <div class="container">
-        <!-- 디버깅 정보 패널 -->
-        <div v-if="showDebugInfo" class="debug-panel">
-          <h4>디버깅 정보</h4>
-          <ul>
-            <li>Kakao SDK 로드 상태: {{ kakaoSdkLoaded ? '✓' : '✗' }}</li>
-            <li>지도 객체 생성 상태: {{ mapObjectCreated ? '✓' : '✗' }}</li>
-            <li>컨테이너 크기: {{ containerDimensions }}</li>
-            <li>컨테이너 실제 크기: {{ actualContainerSize }}</li>
-            <li>지도 초기화 완료: {{ mapInitialized ? '✓' : '✗' }}</li>
-            <li>타일 로딩 완료: {{ tilesLoaded ? '✓' : '✗' }}</li>
-          </ul>
-          <button @click="debugMapContainer" class="btn btn-outline btn-sm">
-            컨테이너 디버그
-          </button>
-          <button @click="forceMapReload" class="btn btn-outline btn-sm">
-            강제 리로드
-          </button>
-        </div>
-
         <div class="content-row">
           <div class="map-section">
-            <!-- 지도 컨테이너 - 명시적 크기 설정 -->
-            <div
-              id="kakao-map"
-              ref="mapContainer"
-              class="map-container"
-              :style="mapContainerStyle"
-            >
-              <!-- 로딩 오버레이 -->
-              <div v-if="isMapLoading" class="map-loading-overlay">
-                <div class="loading-spinner"></div>
-                <p>{{ loadingMessage }}</p>
-                <small>{{ debugMessage }}</small>
-              </div>
-
-              <!-- 에러 오버레이 -->
-              <div v-if="mapLoadingError" class="map-error-overlay">
-                <div class="error-content">
-                  <h3>지도 로딩 실패</h3>
-                  <p>{{ mapLoadingError }}</p>
-                  <div class="error-actions">
-                    <button @click="retryMapLoad" class="btn btn-primary">
-                      다시 시도
-                    </button>
-                    <button @click="toggleDebugInfo" class="btn btn-outline">
-                      디버그 정보 {{ showDebugInfo ? '숨기기' : '보기' }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 지도가 로드되었지만 보이지 않을 때 -->
-              <div v-if="mapObjectCreated && !tilesLoaded && !isMapLoading" class="map-invisible-overlay">
-                <div class="error-content">
-                  <h3>지도 표시 문제</h3>
-                  <p>지도 객체는 생성되었지만 화면에 표시되지 않고 있습니다.</p>
-                  <div class="error-actions">
-                    <button @click="forceMapRelayout" class="btn btn-primary">
-                      지도 다시 그리기
-                    </button>
-                    <button @click="toggleDebugInfo" class="btn btn-outline">
-                      디버그 정보 보기
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div id="kakao-map" class="map-container"></div>
           </div>
 
           <div class="results-section">
@@ -115,7 +534,6 @@
 
               <div v-if="errorMessage" class="alert alert-danger">
                 {{ errorMessage }}
-                <button @click="clearError" class="error-close">&times;</button>
               </div>
 
               <div v-if="isLoading" class="loading-indicator">
@@ -152,497 +570,6 @@
   </div>
 </template>
 
-<script>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import NavBar from '@/components/common/NavBar.vue'
-import { searchAttractions } from '@/api/attractions'
-
-export default {
-  name: 'SearchView',
-  components: {
-    NavBar,
-  },
-  setup() {
-    const searchTerm = ref('')
-    const searchResults = ref([])
-    const isLoading = ref(false)
-    const errorMessage = ref('')
-    const selectedRegion = ref('all')
-    const map = ref(null)
-    const markers = ref([])
-    const mapLoadingError = ref('')
-    const isMapLoading = ref(true)
-    const loadingMessage = ref('지도를 불러오는 중...')
-    const debugMessage = ref('')
-
-    // 디버깅 관련 상태
-    const showDebugInfo = ref(false)
-    const kakaoSdkLoaded = ref(false)
-    const mapObjectCreated = ref(false)
-    const mapInitialized = ref(false)
-    const tilesLoaded = ref(false)
-    const containerDimensions = ref('')
-    const actualContainerSize = ref('')
-    const mapContainer = ref(null)
-
-    return {
-      searchTerm,
-      searchResults,
-      isLoading,
-      errorMessage,
-      selectedRegion,
-      map,
-      markers,
-      mapLoadingError,
-      isMapLoading,
-      loadingMessage,
-      debugMessage,
-      showDebugInfo,
-      kakaoSdkLoaded,
-      mapObjectCreated,
-      mapInitialized,
-      tilesLoaded,
-      containerDimensions,
-      actualContainerSize,
-      mapContainer,
-    }
-  },
-  computed: {
-    metropolitanOptions() {
-      return [
-        { value: 'all', label: '전체' },
-        { value: '1', label: '서울특별시' },
-        { value: '2', label: '부산광역시' },
-        { value: '3', label: '대구광역시' },
-        { value: '4', label: '인천광역시' },
-        { value: '5', label: '광주광역시' },
-        { value: '6', label: '대전광역시' },
-        { value: '7', label: '울산광역시' },
-        { value: '8', label: '세종특별자치시' },
-        { value: '9', label: '경기도' },
-        { value: '10', label: '강원도' },
-        { value: '11', label: '충청북도' },
-        { value: '12', label: '충청남도' },
-        { value: '13', label: '전라북도' },
-        { value: '14', label: '전라남도' },
-        { value: '15', label: '경상북도' },
-        { value: '16', label: '경상남도' },
-        { value: '17', label: '제주특별자치도' },
-      ]
-    },
-    mapContainerStyle() {
-      return {
-        width: '100%',
-        height: '600px',
-        minHeight: '600px',
-        minWidth: '300px', // 최소 너비 보장
-        position: 'relative',
-        display: 'block',
-        overflow: 'hidden',
-        flex: '0 0 auto', // flex 아이템으로서 고정 크기
-      }
-    },
-  },
-  data() {
-    return {
-      resizeHandler: null,
-      retryCount: 0,
-      maxRetries: 3,
-    }
-  },
-  methods: {
-    async handleSearch() {
-      this.isLoading = true
-      this.errorMessage = ''
-      this.clearMarkers()
-
-      const params = {
-        query: this.searchTerm,
-        metropolitanId: this.selectedRegion !== 'all' ? this.selectedRegion : null,
-      }
-
-      try {
-        const response = await searchAttractions(params)
-        this.searchResults = response.data.attractions || []
-        this.updateMap()
-      } catch (error) {
-        console.error('Search error:', error)
-        this.errorMessage = '검색 중 오류가 발생했습니다. 다시 시도해주세요.'
-        this.searchResults = []
-      } finally {
-        this.isLoading = false
-      }
-    },
-
-    async initializeMap() {
-      this.debugMessage = 'SDK 로딩 확인 중...'
-
-      try {
-        // 1. Kakao Maps SDK 로드 확인 및 로딩
-        if (!window.kakao?.maps) {
-          this.debugMessage = 'Kakao Maps SDK 로딩 중...'
-          await this.loadKakaoMapsScript()
-        }
-
-        this.kakaoSdkLoaded = true
-        this.debugMessage = 'SDK 로딩 완료, 컨테이너 확인 중...'
-
-        // 2. DOM이 완전히 렌더링될 때까지 대기
-        await nextTick()
-
-        // 3. 지도 컨테이너 확인 및 준비
-        await this.waitForContainer()
-
-        // 4. 지도 객체 생성
-        await this.createMapObject()
-
-        // 5. 지도 이벤트 설정
-        this.setupMapEvents()
-
-        // 6. 강제 리레이아웃
-        await this.forceMapRelayout()
-
-      } catch (error) {
-        console.error('지도 초기화 실패:', error)
-        this.handleMapError(error.message)
-      }
-    },
-
-    async waitForContainer() {
-      const maxWaitTime = 5000 // 5초
-      const startTime = Date.now()
-
-      while (Date.now() - startTime < maxWaitTime) {
-        const container = document.getElementById('kakao-map')
-
-        if (container) {
-          const rect = container.getBoundingClientRect()
-          const computedStyle = window.getComputedStyle(container)
-          this.containerDimensions = `${rect.width}x${rect.height}`
-          this.actualContainerSize = `실제: ${rect.width}px x ${rect.height}px, CSS: ${computedStyle.width} x ${computedStyle.height}`
-
-          if (rect.width > 0 && rect.height > 0) {
-            this.debugMessage = `컨테이너 준비 완료 (${this.containerDimensions})`
-            return container
-          }
-        }
-
-        this.debugMessage = `컨테이너 대기 중... (${this.containerDimensions}) - ${this.actualContainerSize}`
-        await new Promise(resolve => setTimeout(resolve, 100))
-      }
-
-      throw new Error('지도 컨테이너를 찾을 수 없거나 크기가 0입니다.')
-    },
-
-    async createMapObject() {
-      this.debugMessage = '지도 객체 생성 중...'
-
-      const container = document.getElementById('kakao-map')
-
-      // 컨테이너 스타일 강제 적용
-      container.style.width = '100%'
-      container.style.height = '600px'
-      container.style.position = 'relative'
-      container.style.overflow = 'hidden'
-
-      const options = {
-        center: new window.kakao.maps.LatLng(36.2, 127.9),
-        level: 13,
-      }
-
-      // 지도 객체 생성
-      this.map = new window.kakao.maps.Map(container, options)
-      this.mapObjectCreated = true
-      this.debugMessage = '지도 객체 생성 완료'
-
-      console.log('지도 객체 생성됨:', this.map)
-    },
-
-    setupMapEvents() {
-      if (!this.map) return
-
-      this.debugMessage = '지도 이벤트 설정 중...'
-
-      // 지도 초기화 완료 이벤트
-      window.kakao.maps.event.addListener(this.map, 'idle', () => {
-        if (!this.mapInitialized) {
-          console.log('지도 초기화 완료 (idle 이벤트)')
-          this.mapInitialized = true
-          this.isMapLoading = false
-          this.debugMessage = '지도 초기화 완료'
-        }
-      })
-
-      // 타일 로딩 완료 이벤트
-      window.kakao.maps.event.addListener(this.map, 'tilesloaded', () => {
-        console.log('지도 타일 로딩 완료')
-        this.tilesLoaded = true
-        this.isMapLoading = false
-        this.debugMessage = '타일 로딩 완료'
-      })
-
-      // 지도 클릭 이벤트 (테스트용)
-      window.kakao.maps.event.addListener(this.map, 'click', (mouseEvent) => {
-        console.log('지도 클릭됨:', mouseEvent.latLng.toString())
-      })
-
-      // 리사이즈 핸들러 설정
-      this.setupResizeHandler()
-    },
-
-    async forceMapRelayout() {
-      if (!this.map) return
-
-      this.debugMessage = '지도 리레이아웃 실행 중...'
-
-      // 여러 번의 리레이아웃 시도
-      for (let i = 0; i < 3; i++) {
-        await new Promise(resolve => setTimeout(resolve, 200))
-        this.map.relayout()
-        console.log(`지도 리레이아웃 시도 ${i + 1}`)
-      }
-
-      // 지도 중심 재설정
-      const center = new window.kakao.maps.LatLng(36.2, 127.9)
-      this.map.setCenter(center)
-
-      this.debugMessage = '리레이아웃 완료'
-    },
-
-    async loadKakaoMapsScript() {
-      return new Promise((resolve, reject) => {
-        if (window.kakao?.maps) {
-          resolve()
-          return
-        }
-
-        // 기존 스크립트 제거
-        const existingScript = document.querySelector('script[src*="dapi.kakao.com"]')
-        if (existingScript) {
-          existingScript.remove()
-        }
-
-        const script = document.createElement('script')
-        const apiKey = import.meta.env.VUE_APP_KAKAO_API_KEY
-
-        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&libraries=services&autoload=false`
-        script.async = false // 동기적 로딩으로 변경
-        script.defer = false
-
-        script.onload = () => {
-          if (window.kakao) {
-            window.kakao.maps.load(() => {
-              console.log('Kakao Maps SDK 로딩 완료')
-              resolve()
-            })
-          } else {
-            reject(new Error('Kakao SDK 초기화 실패'))
-          }
-        }
-
-        script.onerror = (error) => {
-          console.error('Kakao Maps 스크립트 로딩 실패:', error)
-          reject(new Error('Kakao Maps 스크립트 로딩 실패'))
-        }
-
-        document.head.appendChild(script)
-      })
-    },
-
-    handleMapError(message) {
-      this.mapLoadingError = message
-      this.isMapLoading = false
-      this.debugMessage = `오류: ${message}`
-    },
-
-    async retryMapLoad() {
-      if (this.retryCount >= this.maxRetries) {
-        this.mapLoadingError = `최대 재시도 횟수(${this.maxRetries})를 초과했습니다.`
-        return
-      }
-
-      this.retryCount++
-      this.mapLoadingError = ''
-      this.isMapLoading = true
-      this.mapObjectCreated = false
-      this.mapInitialized = false
-      this.tilesLoaded = false
-
-      console.log(`지도 로딩 재시도 ${this.retryCount}/${this.maxRetries}`)
-
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      this.initializeMap()
-    },
-
-    async forceMapReload() {
-      console.log('강제 지도 리로드 시작')
-
-      // 기존 지도 객체 정리
-      if (this.map) {
-        this.clearMarkers()
-        this.map = null
-      }
-
-      // 상태 초기화
-      this.mapObjectCreated = false
-      this.mapInitialized = false
-      this.tilesLoaded = false
-      this.isMapLoading = true
-      this.mapLoadingError = ''
-
-      // 지도 컨테이너 리셋
-      const container = document.getElementById('kakao-map')
-      if (container) {
-        container.innerHTML = ''
-      }
-
-      await this.initializeMap()
-    },
-
-    debugMapContainer() {
-      const container = document.getElementById('kakao-map')
-      if (container) {
-        const rect = container.getBoundingClientRect()
-        const computedStyle = window.getComputedStyle(container)
-
-        console.log('=== 지도 컨테이너 디버그 정보 ===')
-        console.log('컨테이너 요소:', container)
-        console.log('크기:', rect)
-        console.log('부모 요소:', container.parentElement)
-        console.log('부모 크기:', container.parentElement?.getBoundingClientRect())
-        console.log('display:', computedStyle.display)
-        console.log('visibility:', computedStyle.visibility)
-        console.log('position:', computedStyle.position)
-        console.log('width:', computedStyle.width)
-        console.log('height:', computedStyle.height)
-        console.log('flex:', computedStyle.flex)
-        console.log('z-index:', computedStyle.zIndex)
-        console.log('overflow:', computedStyle.overflow)
-        console.log('background:', computedStyle.background)
-
-        this.containerDimensions = `${rect.width}x${rect.height}`
-        this.actualContainerSize = `실제: ${rect.width}px x ${rect.height}px, CSS: ${computedStyle.width} x ${computedStyle.height}`
-
-        // 지도 객체 정보
-        if (this.map) {
-          console.log('지도 객체:', this.map)
-          console.log('지도 중심:', this.map.getCenter().toString())
-          console.log('지도 레벨:', this.map.getLevel())
-        }
-      }
-    },
-
-    toggleDebugInfo() {
-      this.showDebugInfo = !this.showDebugInfo
-      if (this.showDebugInfo) {
-        this.debugMapContainer()
-      }
-    },
-
-    setupResizeHandler() {
-      if (this.resizeHandler) {
-        window.removeEventListener('resize', this.resizeHandler)
-      }
-
-      this.resizeHandler = () => {
-        if (this.map) {
-          setTimeout(() => {
-            this.map.relayout()
-            console.log('윈도우 리사이즈로 인한 지도 리레이아웃')
-          }, 100)
-        }
-      }
-
-      window.addEventListener('resize', this.resizeHandler)
-    },
-
-    clearMarkers() {
-      this.markers.forEach((marker) => marker.setMap(null))
-      this.markers = []
-    },
-
-    updateMap() {
-      if (!this.map || this.searchResults.length === 0) return
-
-      this.clearMarkers()
-
-      const bounds = new window.kakao.maps.LatLngBounds()
-
-      this.searchResults.forEach((attraction) => {
-        if (attraction.mapx && attraction.mapy) {
-          const position = new window.kakao.maps.LatLng(
-            parseFloat(attraction.mapy),
-            parseFloat(attraction.mapx),
-          )
-
-          const marker = new window.kakao.maps.Marker({
-            map: this.map,
-            position: position,
-            title: attraction.title,
-          })
-
-          this.markers.push(marker)
-          bounds.extend(position)
-
-          const infowindow = new window.kakao.maps.InfoWindow({
-            content: `<div style="padding:5px;width:150px;text-align:center;">${attraction.title}</div>`,
-          })
-
-          window.kakao.maps.event.addListener(marker, 'mouseover', () => {
-            infowindow.open(this.map, marker)
-          })
-
-          window.kakao.maps.event.addListener(marker, 'mouseout', () => {
-            infowindow.close()
-          })
-
-          window.kakao.maps.event.addListener(marker, 'click', () => {
-            this.$router.push(`/attraction/${attraction.id}`)
-          })
-        }
-      })
-
-      if (!bounds.isEmpty()) {
-        this.map.setBounds(bounds)
-      }
-    },
-
-    clearError() {
-      this.errorMessage = ''
-    },
-
-    cleanupResources() {
-      if (this.resizeHandler) {
-        window.removeEventListener('resize', this.resizeHandler)
-        this.resizeHandler = null
-      }
-
-      this.clearMarkers()
-      this.map = null
-    },
-  },
-
-  async mounted() {
-    console.log('SearchView 컴포넌트 마운트됨')
-
-    // 다음 틱에서 지도 초기화 시작
-    await nextTick()
-
-    try {
-      await this.initializeMap()
-    } catch (error) {
-      console.error('초기 지도 로딩 실패:', error)
-      // 2초 후 자동 재시도
-      setTimeout(() => this.retryMapLoad(), 2000)
-    }
-  },
-
-  beforeUnmount() {
-    this.cleanupResources()
-  },
-}
-</script>
-
 <style scoped>
 .search-view {
   min-height: 100vh;
@@ -665,7 +592,7 @@ export default {
 }
 
 .search-form {
-  max-width: 900px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -680,10 +607,20 @@ export default {
 }
 
 .region-select {
-  width: 25%;
+  width: 15%;
 }
 
-.region-select select {
+.local-select {
+  width: 15%;
+}
+
+.content-type-select {
+  width: 15%;
+}
+
+.region-select select,
+.local-select select,
+.content-type-select select {
   height: 48px;
   font-size: 1.05rem;
   border-radius: 6px;
@@ -691,8 +628,15 @@ export default {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
+.local-select select:disabled,
+.content-type-select select:disabled {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
 .keyword-input {
-  width: 60%;
+  width: 43%;
 }
 
 .keyword-input input {
@@ -705,7 +649,7 @@ export default {
 }
 
 .search-button {
-  width: 15%;
+  width: 12%;
 }
 
 .search-button button {
@@ -721,32 +665,6 @@ export default {
   padding: 2rem 0;
 }
 
-/* 디버그 패널 */
-.debug-panel {
-  background-color: #f8f9fa;
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-
-.debug-panel h4 {
-  color: var(--primary-color);
-  margin-bottom: 0.5rem;
-}
-
-.debug-panel ul {
-  list-style: none;
-  padding: 0;
-  margin: 0.5rem 0;
-}
-
-.debug-panel li {
-  padding: 0.2rem 0;
-  font-family: monospace;
-  font-size: 0.9rem;
-}
-
 /* 커스텀 그리드 레이아웃 */
 .content-row {
   display: flex;
@@ -756,21 +674,20 @@ export default {
 }
 
 .map-section {
-  flex: 2; /* 2/3 너비 차지 */
-  min-width: 0; /* flex 아이템의 최소 너비 제한 해제 */
+  flex: 2;
+  min-width: 0;
 }
 
 .results-section {
-  flex: 1; /* 1/3 너비 차지 */
-  min-width: 300px; /* 최소 너비 보장 */
+  flex: 1;
+  min-width: 300px;
 }
 
-/* 지도 컨테이너 - 강제 스타일링 */
 .map-container {
   width: 100% !important;
   height: 600px !important;
   min-height: 600px !important;
-  min-width: 300px !important; /* 최소 너비 보장 */
+  min-width: 300px !important;
   border-radius: 12px;
   overflow: hidden !important;
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
@@ -779,58 +696,6 @@ export default {
   background-color: #f7f7f7;
   position: relative !important;
   display: block !important;
-}
-
-/* 오버레이 스타일 */
-.map-loading-overlay,
-.map-error-overlay,
-.map-invisible-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(248, 249, 250, 0.95);
-  z-index: 1000;
-  border-radius: 12px;
-}
-
-.error-content {
-  text-align: center;
-  padding: 2rem;
-  max-width: 400px;
-}
-
-.error-content h3 {
-  color: #dc3545;
-  margin-bottom: 1rem;
-}
-
-.error-actions {
-  margin-top: 1rem;
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid var(--primary-color);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
 }
 
 .search-results {
@@ -850,31 +715,6 @@ export default {
   font-weight: 600;
   border-bottom: 2px solid var(--primary-light);
   padding-bottom: 0.8rem;
-}
-
-.alert {
-  position: relative;
-  padding: 0.75rem 1.25rem;
-  margin-bottom: 1.5rem;
-  border: 1px solid transparent;
-  border-radius: 0.25rem;
-}
-
-.alert-danger {
-  background-color: #f8d7da;
-  color: #721c24;
-  border-color: #f5c6cb;
-}
-
-.error-close {
-  position: absolute;
-  top: 0.5rem;
-  right: 1rem;
-  background: none;
-  border: none;
-  font-size: 1.2rem;
-  cursor: pointer;
-  color: inherit;
 }
 
 .result-item {
@@ -937,19 +777,28 @@ export default {
   align-items: center;
 }
 
-/* Kakao Maps 강제 스타일 오버라이드 */
-#kakao-map * {
-  box-sizing: border-box !important;
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
 }
 
-/* 지도 내부 요소들이 제대로 표시되도록 */
-#kakao-map .MapWrap,
-#kakao-map .map_container,
-#kakao-map canvas {
-  width: 100% !important;
-  height: 100% !important;
-  position: relative !important;
-  display: block !important;
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #f5c6cb;
+  border-radius: 0.25rem;
 }
 
 /* 반응형 스타일 */
@@ -995,8 +844,11 @@ export default {
     margin-bottom: 0.8rem;
   }
 
-  .content-row {
-    gap: 0.5rem;
+  .region-select,
+  .local-select,
+  .content-type-select,
+  .keyword-input {
+    width: 100% !important;
   }
 
   .map-container {
@@ -1010,14 +862,6 @@ export default {
     max-height: 450px;
     border-radius: 8px;
     padding: 1.5rem;
-  }
-
-  .error-actions {
-    flex-direction: column;
-  }
-
-  .debug-panel {
-    font-size: 0.8rem;
   }
 }
 </style>
