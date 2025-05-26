@@ -77,18 +77,20 @@ export default {
 
       const params = {
         //query: this.searchTerm,
-        metropolitanId: this.selectedRegion !== 'all' ? this.selectedRegion : null,
-        localId: this.selectedLocal !== 'all' ? this.selectedLocal : null,
+        metropolitanCode: this.selectedRegion !== 'all' ? this.selectedRegion : null,
+        localCode: this.selectedLocal !== 'all' ? this.selectedLocal : null,
         contentTypeId: this.selectedContentType !== 'all' ? this.selectedContentType : null,
-        isRangeSearch: true,
+        isRangeSearch: false,
         latitude: this.map.getCenter().getLat(),
         longitude: this.map.getCenter().getLng(),
-        range: 25,
+        range: 300,
       }
 
       try {
         const response = await searchAttractions(params)
         this.searchResults = response.data.attractions || []
+        this.fetchTime = response.data.fetchTime || '0'
+        console.log("locals: ", this.localOptions)
         this.updateMap()
       } catch (error) {
         console.error('Search error:', error)
@@ -132,15 +134,13 @@ export default {
         // API 응답 구조에 따라 locals 배열 매핑
         if (data.locals && Array.isArray(data.locals)) {
           this.localOptions = data.locals.map(local => ({
-            value: local.code,
+            value: local.id,
             label: local.name
           }))
         } else {
           console.warn('예상하지 못한 API 응답 구조:', data)
           this.localOptions = []
         }
-
-        console.log(`${metropolitanCode}에 대한 로컬 옵션 로드됨:`, this.localOptions)
 
       } catch (error) {
         console.error('로컬 옵션 로딩 실패:', error)
@@ -181,22 +181,21 @@ export default {
         }
 
         this.contentTypeOptions = contentTypes.map(type => ({
-          value: type.id || type.code || type.typeId,
+          value: type.id,
           label: type.name || type.typeName || type.title
         }))
-
-        console.log('여행지 유형 옵션 로드됨:', this.contentTypeOptions)
 
       } catch (error) {
         console.error('여행지 유형 옵션 로딩 실패:', error)
         this.contentTypeOptions = []
 
-        // 개발 환경에서 mock 데이터 사용
-        if (import.meta.env?.DEV) {
-          this.contentTypeOptions = this.getMockContentTypeOptions()
-          console.log('Mock 여행지 유형 데이터 사용:', this.contentTypeOptions)
-        }
+        // // 개발 환경에서 mock 데이터 사용
+        // if (import.meta.env?.DEV) {
+        //   this.contentTypeOptions = this.getMockContentTypeOptions()
+        //   console.log('Mock 여행지 유형 데이터 사용:', this.contentTypeOptions)
+        // }
       } finally {
+        console.log(this.contentTypeOptions)
         this.isLoadingContentTypes = false
       }
     },
@@ -531,6 +530,9 @@ export default {
           <div class="results-section">
             <div class="search-results">
               <h2 class="results-title">검색 결과</h2>
+              <div v-if="searchResults.length != 0">
+                {{ searchResults.length }}개, {{ fetchTime }}초 걸림
+              </div>
 
               <div v-if="errorMessage" class="alert alert-danger">
                 {{ errorMessage }}
