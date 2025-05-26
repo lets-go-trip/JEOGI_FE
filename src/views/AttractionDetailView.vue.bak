@@ -42,114 +42,103 @@
             <!-- Parking Reservation Section -->
             <div class="parking-reservation">
               <h3 class="section-title">주차 예약</h3>
+              
+              <!-- Date Selection -->
+              <div class="date-selection">
+                <label for="reservation-date" class="form-label">예약 날짜</label>
+                <input
+                  id="reservation-date"
+                  v-model="selectedDate"
+                  type="date"
+                  :min="today"
+                  class="date-input"
+                  @change="resetTimeSelection"
+                />
+              </div>
+
+              <!-- Time Selection -->
+              <div v-if="selectedDate" class="time-selection">
+                <div class="time-group">
+                  <label for="start-time" class="form-label">시작 시간</label>
+                  <input
+                    id="start-time"
+                    v-model="startTime"
+                    type="time"
+                    class="time-input"
+                    @change="onTimeChange"
+                  />
+                </div>
+                
+                <div class="time-group">
+                  <label for="end-time" class="form-label">종료 시간</label>
+                  <input
+                    id="end-time"
+                    v-model="endTime"
+                    type="time"
+                    class="time-input"
+                    :min="startTime"
+                    @change="onTimeChange"
+                  />
+                </div>
+              </div>
+
+              <!-- Check Availability Button -->
+              <div v-if="selectedDate && startTime && endTime" class="check-availability">
+                <button
+                  @click="checkAvailability"
+                  :disabled="isCheckingAvailability"
+                  class="check-button"
+                >
+                  <span v-if="isCheckingAvailability">확인 중...</span>
+                  <span v-else>예약 가능 여부 확인</span>
+                </button>
+              </div>
+
+              <!-- Available Spaces Display -->
+              <div v-if="availableSpaces !== null" class="availability-result">
+                <div v-if="availableSpaces > 0" class="available">
+                  <div class="availability-info">
+                    <span class="availability-text">예약 가능한 주차 공간: </span>
+                    <span class="spaces-count">{{ availableSpaces }}개</span>
+                  </div>
+                  <button
+                    @click="makeReservation"
+                    :disabled="isReserving"
+                    class="reserve-button available"
+                  >
+                    <span v-if="isReserving">예약 중...</span>
+                    <span v-else>주차 예약하기</span>
+                  </button>
+                </div>
+                
+                <div v-else class="unavailable">
+                  <div class="availability-info">
+                    <span class="availability-text">해당 시간에는 예약 가능한 주차 공간이 없습니다.</span>
+                  </div>
+                  <button disabled class="reserve-button unavailable">
+                    예약 불가
+                  </button>
+                </div>
+              </div>
+
+              <!-- Reservation Result -->
+              <div v-if="reservationResult" class="reservation-result">
+                <div v-if="reservationResult.success" class="success-message">
+                  <h4>✅ 예약이 완료되었습니다!</h4>
+                  <p><strong>예약 번호:</strong> {{ reservationResult.data.reservationId }}</p>
+                  <p><strong>예약 시간:</strong> {{ formatDateTime(reservationResult.data.startDateTime) }} ~ {{ formatDateTime(reservationResult.data.endDateTime) }}</p>
+                </div>
+                
+                <div v-else class="error-message">
+                  <h4>❌ 예약에 실패했습니다.</h4>
+                  <p>{{ reservationResult.message }}</p>
+                </div>
+              </div>
 
               <!-- Login Notice for non-authenticated users -->
               <div v-if="!isLoggedIn" class="login-notice-parking">
                 <p>주차 예약을 위해서는 로그인이 필요합니다.</p>
                 <router-link to="/login" class="login-button-small">로그인하기</router-link>
-              </div>
-
-              <div v-else>
-                <!-- Date Selection -->
-                <div class="date-selection">
-                  <label for="reservation-date" class="form-label">예약 날짜</label>
-                  <input
-                    id="reservation-date"
-                    v-model="selectedDate"
-                    type="date"
-                    :min="today"
-                    class="date-input"
-                    @change="resetTimeSelection"
-                  />
-                </div>
-
-                <!-- Time Selection -->
-                <div v-if="selectedDate" class="time-selection">
-                  <div class="time-group">
-                    <div class="time-field">
-                      <label for="start-time" class="form-label">시작 시간</label>
-                      <input
-                        id="start-time"
-                        v-model="startTime"
-                        type="time"
-                        class="time-input"
-                        @change="onTimeChange"
-                      />
-                    </div>
-
-                    <div class="time-field">
-                      <label for="end-time" class="form-label">종료 시간</label>
-                      <input
-                        id="end-time"
-                        v-model="endTime"
-                        type="time"
-                        class="time-input"
-                        :min="startTime"
-                        @change="onTimeChange"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Check Availability Button -->
-                <div v-if="selectedDate && startTime && endTime" class="check-availability">
-                  <button
-                    @click="checkAvailability"
-                    :disabled="isCheckingAvailability"
-                    class="check-button"
-                  >
-                    <span v-if="isCheckingAvailability">확인 중...</span>
-                    <span v-else>예약 가능 여부 확인</span>
-                  </button>
-                </div>
-
-                <!-- Available Spaces Display -->
-                <div v-if="availableSpaces !== null" class="availability-result">
-                  <div v-if="availableSpaces > 0" class="available">
-                    <div class="availability-info">
-                      <span class="availability-text">예약 가능한 주차 공간: </span>
-                      <span class="spaces-count">{{ availableSpaces }}개</span>
-                    </div>
-                    <button
-                      @click="makeReservation"
-                      :disabled="isReserving"
-                      class="reserve-button available"
-                    >
-                      <span v-if="isReserving">예약 중...</span>
-                      <span v-else>주차 예약하기</span>
-                    </button>
-                  </div>
-
-                  <div v-else class="unavailable">
-                    <div class="availability-info">
-                      <span class="availability-text"
-                        >해당 시간에는 예약 가능한 주차 공간이 없습니다.</span
-                      >
-                    </div>
-                    <button disabled class="reserve-button unavailable">예약 불가</button>
-                  </div>
-                </div>
-
-                <!-- Reservation Result -->
-                <div v-if="reservationResult" class="reservation-result">
-                  <div v-if="reservationResult.success" class="success-message">
-                    <h4>✅ 예약이 완료되었습니다!</h4>
-                    <p>
-                      <strong>예약 번호:</strong>
-                      {{ reservationResult.data.reservationId || reservationResult.data.id }}
-                    </p>
-                    <p>
-                      <strong>예약 시간:</strong>
-                      {{ formatDateTime(reservationResult.data.startDateTime) }} ~
-                      {{ formatDateTime(reservationResult.data.endDateTime) }}
-                    </p>
-                  </div>
-
-                  <div v-else class="error-message">
-                    <h4>❌ 예약에 실패했습니다.</h4>
-                    <p>{{ reservationResult.message }}</p>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -282,6 +271,9 @@ export default {
     const isCheckingAvailability = ref(false)
     const isReserving = ref(false)
     const reservationResult = ref(null)
+    const today = new Date().toISOString().split('T')[0]
+    const isReserving = ref(false)
+    const reservationResult = ref(null)
 
     // Computed
     const attractionId = computed(() => route.params.id)
@@ -291,7 +283,7 @@ export default {
     const today = computed(() => {
       const date = new Date()
       const yyyy = date.getFullYear()
-      const mm = String(date.getMonth() + 1).padStart(2, '0')
+      const mm = String(date.getMonth() + 1).padStart(2, '0') // Months are zero-based
       const dd = String(date.getDate()).padStart(2, '0')
       return `${yyyy}-${mm}-${dd}`
     })
@@ -303,6 +295,7 @@ export default {
 
       try {
         const response = await getAttractionDetail(attractionId.value)
+
         attraction.value = response.data
         chatRoomId.value = attractionId.value
 
@@ -331,9 +324,13 @@ export default {
       if (!isLoggedIn.value || !chatRoomId.value) return
 
       try {
+        // Load initial messages
         await loadChatMessages('latest')
+
+        // Connect to WebSocket
         stompClient.value = connectChatRoom(chatRoomId.value, onMessageReceived)
 
+        // Send ENTER message after connection
         setTimeout(() => {
           sendEnterMessage()
         }, 1000)
@@ -351,6 +348,7 @@ export default {
       try {
         isLoadingHistory.value = true
         const response = await getChatMessages(chatRoomId.value, cursorValue)
+
         const data = response.data
         const messages = data.chatMessageList || []
 
@@ -359,6 +357,7 @@ export default {
           return
         }
 
+        // Process messages with isMe flag and ensure all properties are present
         const processedMessages = messages.map((message) => ({
           id: message.id,
           sender: message.sender,
@@ -369,24 +368,33 @@ export default {
           timestamp: message.timestamp || new Date().toISOString(),
         }))
 
+        // Find the lowest ID for cursor
         const lowestId = Math.min(...messages.map((m) => m.id))
 
+        // Check if we've reached the beginning (ID = 1)
         if (lowestId === 1) {
           hasMoreMessages.value = false
         }
 
         if (cursorValue === 'latest') {
+          // Initial load - sort by ID ascending (oldest to newest)
           const sortedMessages = processedMessages.sort((a, b) => a.id - b.id)
-          chatMessages.value = [...sortedMessages]
+          chatMessages.value = [...sortedMessages] // Create new array for reactivity
           cursor.value = lowestId
           await scrollToBottom()
         } else {
+          // Loading previous messages - prepend to beginning
           const scrollHeight = chatMessagesContainer.value?.scrollHeight || 0
+
+          // Sort old messages and prepend them
           const sortedOldMessages = processedMessages.sort((a, b) => a.id - b.id)
+
+          // Create a new array to trigger Vue reactivity properly
           const updatedMessages = [...sortedOldMessages, ...chatMessages.value]
           chatMessages.value = updatedMessages
           cursor.value = lowestId
 
+          // Maintain scroll position
           await nextTick()
           if (chatMessagesContainer.value) {
             const newScrollHeight = chatMessagesContainer.value.scrollHeight
@@ -413,6 +421,7 @@ export default {
           sender: userName.value,
           message: `${userName.value}님이 채팅방에 입장했습니다.`,
         }
+
         await sendChatMessage(enterMessage)
       } catch (error) {
         console.error('Error sending enter message:', error)
@@ -429,7 +438,10 @@ export default {
         isMe: message.sender === userName.value,
         timestamp: message.timestamp || new Date().toISOString(),
       }
+
+      // Simply add new message to the end (no sorting needed for real-time messages)
       chatMessages.value.push(normalizedMessage)
+
       scrollToBottom()
     }
 
@@ -443,6 +455,7 @@ export default {
           sender: userName.value,
           message: newMessage.value.trim(),
         }
+
         await sendChatMessage(messageData)
         newMessage.value = ''
       } catch (error) {
@@ -452,8 +465,11 @@ export default {
 
     const handleScroll = () => {
       if (!chatMessagesContainer.value || isLoadingHistory.value || !hasMoreMessages.value) return
+
       const { scrollTop } = chatMessagesContainer.value
 
+      // Load previous messages when scrolled to top
+      // Only load if cursor is a valid number (not 'latest')
       if (scrollTop === 0 && typeof cursor.value === 'number' && cursor.value > 1) {
         loadChatMessages(cursor.value)
       }
@@ -468,21 +484,10 @@ export default {
       })
     }
 
-    const formatDateTime = (dateTimeString) => {
-      if (!dateTimeString) return ''
-      const date = new Date(dateTimeString)
-      return date.toLocaleString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    }
-
     const scrollToBottom = async () => {
       await nextTick()
       if (chatMessagesContainer.value) {
+        // Force scroll to bottom with a small delay to ensure DOM is updated
         setTimeout(() => {
           chatMessagesContainer.value.scrollTop = chatMessagesContainer.value.scrollHeight
         }, 50)
@@ -499,6 +504,7 @@ export default {
           sender: userName.value,
           message: `${userName.value}님이 채팅방을 나갔습니다.`,
         }
+
         await sendChatMessage(leaveMessage)
       } catch (error) {
         console.error('Error sending leave message:', error)
@@ -524,20 +530,16 @@ export default {
       startTime.value = ''
       endTime.value = ''
       availableSpaces.value = null
-      reservationResult.value = null
     }
 
     const onTimeChange = () => {
+      // Automatically set end time to 1 hour later by default
       if (startTime.value && !endTime.value) {
         const [startHour, startMinute] = startTime.value.split(':')
         const endHour = parseInt(startHour) + 1
-        if (endHour < 24) {
-          endTime.value = `${String(endHour).padStart(2, '0')}:${startMinute}`
-        }
+        const endMinute = startMinute
+        endTime.value = `${String(endHour).padStart(2, '0')}:${endMinute}`
       }
-      // Reset availability when time changes
-      availableSpaces.value = null
-      reservationResult.value = null
     }
 
     const checkAvailability = async () => {
@@ -547,79 +549,69 @@ export default {
       availableSpaces.value = null
 
       try {
-        // Create DateTime objects for API call
-        const startDateTime = new Date(`${selectedDate.value}T${startTime.value}:00`)
-        const endDateTime = new Date(`${selectedDate.value}T${endTime.value}:00`)
+        // Simulate API call
+        setTimeout(() => {
+          // For demo, randomly assign available spaces
+          availableSpaces.value = Math.floor(Math.random() * 10)
+          isCheckingAvailability.value = false
+        }, 1000)
 
-        // Use attraction ID as parking lot ID (assuming they're the same)
-        const response = await getAvailableParkingSpaces(
-          attractionId.value,
-          startDateTime,
-          endDateTime,
-        )
+        /*
+        Uncomment and modify the following code to integrate with the actual API
 
-        // The API returns the number directly
-        availableSpaces.value = response.data
+        const response = await checkParkingAvailability({
+          date: selectedDate.value,
+          startTime: startTime.value,
+          endTime: endTime.value,
+        })
+
+        availableSpaces.value = response.data.availableSpaces
+        isCheckingAvailability.value = false
+        */
       } catch (error) {
         console.error('Error checking availability:', error)
-        availableSpaces.value = 0
-        // Show error message
-        reservationResult.value = {
-          success: false,
-          message: '예약 가능 여부 확인 중 오류가 발생했습니다.',
-        }
-      } finally {
         isCheckingAvailability.value = false
       }
     }
 
     const makeReservation = async () => {
-      if (!selectedDate.value || !startTime.value || !endTime.value || availableSpaces.value <= 0)
-        return
+      if (!selectedDate.value || !startTime.value || !endTime.value || availableSpaces.value === null) return
 
       isReserving.value = true
       reservationResult.value = null
 
       try {
-        // Create DateTime objects for API call
-        const startDateTime = new Date(`${selectedDate.value}T${startTime.value}:00`)
-        const endDateTime = new Date(`${selectedDate.value}T${endTime.value}:00`)
-
-        // Use attraction ID as parking lot ID (assuming they're the same)
-        const response = await createParkingReservation(
-          attractionId.value,
-          startDateTime,
-          endDateTime,
-        )
-
-        reservationResult.value = {
-          success: true,
-          data: response.data,
-        }
-
-        // Reset the form after successful reservation
+        // Simulate API call
         setTimeout(() => {
-          resetTimeSelection()
-        }, 3000)
+          reservationResult.value = {
+            success: true,
+            data: {
+              reservationId: 'ABC123456',
+              startDateTime: `${selectedDate.value}T${startTime.value}:00`,
+              endDateTime: `${selectedDate.value}T${endTime.value}:00`,
+            },
+          }
+          isReserving.value = false
+        }, 1000)
+
+        /*
+        Uncomment and modify the following code to integrate with the actual API
+
+        const response = await makeParkingReservation({
+          date: selectedDate.value,
+          startTime: startTime.value,
+          endTime: endTime.value,
+        })
+
+        reservationResult.value = response.data
+        isReserving.value = false
+        */
       } catch (error) {
         console.error('Error making reservation:', error)
-        let errorMessage = '예약 처리 중 오류가 발생했습니다.'
-
-        if (error.response?.data?.message) {
-          errorMessage = error.response.data.message
-        } else if (error.response?.status === 400) {
-          errorMessage = '입력한 정보를 다시 확인해주세요.'
-        } else if (error.response?.status === 401) {
-          errorMessage = '로그인이 필요합니다.'
-        } else if (error.response?.status === 409) {
-          errorMessage = '해당 시간에는 이미 예약이 가득찼습니다.'
-        }
-
         reservationResult.value = {
           success: false,
-          message: errorMessage,
+          message: '예약 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
         }
-      } finally {
         isReserving.value = false
       }
     }
@@ -672,7 +664,6 @@ export default {
       sendMessage,
       handleScroll,
       formatTime,
-      formatDateTime,
       scrollToBottom,
       sendLeaveMessage,
       disconnectFromChat,
@@ -774,7 +765,6 @@ export default {
   text-decoration: underline;
 }
 
-/* Parking Reservation Styles */
 .parking-reservation {
   margin-top: 30px;
   padding: 20px;
@@ -788,31 +778,6 @@ export default {
   margin-bottom: 15px;
 }
 
-.login-notice-parking {
-  text-align: center;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  color: #666;
-}
-
-.login-button-small {
-  display: inline-block;
-  padding: 8px 16px;
-  background: #3498db;
-  color: white;
-  text-decoration: none;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: bold;
-  margin-top: 10px;
-  transition: background 0.3s;
-}
-
-.login-button-small:hover {
-  background: #2980b9;
-}
-
 .date-selection,
 .time-selection {
   margin-bottom: 20px;
@@ -823,7 +788,6 @@ export default {
   margin-bottom: 8px;
   font-weight: 500;
   color: #34495e;
-  font-size: 14px;
 }
 
 .date-input,
@@ -834,32 +798,24 @@ export default {
   border-radius: 8px;
   outline: none;
   font-size: 14px;
-  transition: border-color 0.3s;
 }
 
 .date-input:focus,
 .time-input:focus {
   border-color: #3498db;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
 }
 
 .time-group {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px;
-}
-
-.time-field {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .check-availability {
-  margin: 20px 0;
+  margin-top: 10px;
 }
 
 .check-button {
-  width: 100%;
   padding: 12px 20px;
   background: #3498db;
   color: white;
@@ -893,13 +849,11 @@ export default {
 
 .available {
   background: #d4edda;
-  border: 1px solid #c3e6cb;
   color: #155724;
 }
 
 .unavailable {
   background: #f8d7da;
-  border: 1px solid #f5c6cb;
   color: #721c24;
 }
 
@@ -907,12 +861,11 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
 }
 
 .availability-text {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
 }
 
 .spaces-count {
@@ -921,8 +874,7 @@ export default {
 }
 
 .reserve-button {
-  width: 100%;
-  padding: 12px 18px;
+  padding: 10px 18px;
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -936,75 +888,49 @@ export default {
   color: white;
 }
 
-.reserve-button.available:hover:not(:disabled) {
-  background: #218838;
-}
-
 .reserve-button.unavailable {
   background: #dc3545;
   color: white;
   cursor: not-allowed;
 }
 
-.reserve-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .reservation-result {
   margin-top: 20px;
+  padding: 15px;
+  border-radius: 8px;
 }
 
 .success-message {
   background: #d1e7dd;
-  border: 1px solid #badbcc;
   color: #0f5132;
   padding: 15px;
   border-radius: 8px;
 }
 
-.success-message h4 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.success-message p {
-  margin: 5px 0;
-  font-size: 14px;
-}
-
 .error-message {
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
+  background: #fee;
+  color: #c33;
   padding: 15px;
   border-radius: 8px;
+  border-left: 4px solid #e74c3c;
+  margin: 20px 0;
 }
 
-.error-message h4 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.error-message p {
-  margin: 5px 0;
-  font-size: 14px;
-}
-
-/* Chat Section */
+/* Chat section styles */
 .chat-section {
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
-  height: 600px;
+  height: 600px; /* Fixed height for consistent layout */
 }
 
 .chat-container {
   display: flex;
   flex-direction: column;
   height: 100%;
+  max-height: 600px; /* Prevent overflow */
 }
 
 .chat-header {
@@ -1028,7 +954,8 @@ export default {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  min-height: 0;
+  min-height: 0; /* Allow flex shrinking */
+  max-height: calc(600px - 140px); /* Subtract header and input heights */
 }
 
 .message {
@@ -1084,6 +1011,22 @@ export default {
   font-style: italic;
 }
 
+.no-messages p {
+  margin: 0;
+}
+
+.message-content {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #ecf0f1;
+}
+
+.own-message .message-content {
+  background: #3498db;
+  color: white;
+}
+
 .message-header {
   display: flex;
   justify-content: space-between;
@@ -1113,6 +1056,8 @@ export default {
   padding: 20px;
   border-top: 1px solid #ecf0f1;
   background: #f8f9fa;
+  flex-shrink: 0; /* Prevent shrinking */
+  min-height: 80px; /* Minimum height for input area */
 }
 
 .connection-status {
@@ -1164,6 +1109,7 @@ export default {
   cursor: not-allowed;
 }
 
+/* Login prompt styles */
 .login-prompt {
   text-align: center;
   padding: 20px;
@@ -1192,32 +1138,9 @@ export default {
   background: #2980b9;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .main-content {
-    grid-template-columns: 1fr;
-    gap: 20px;
-  }
-
-  .attraction-title {
-    font-size: 24px;
-  }
-
-  .attraction-card {
-    padding: 20px;
-  }
-
-  .parking-reservation {
-    padding: 15px;
-  }
-
-  .time-group {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .chat-section {
-    height: 500px;
-  }
+.login-notice {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
 }
 </style>
