@@ -1,6 +1,7 @@
 import apiClient from './index'
 
 export function searchAttractions(searchParams) {
+  console.log(searchParams)
   return apiClient.get('/api/search/condition', { params: searchParams })
 }
 

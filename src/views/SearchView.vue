@@ -58,13 +58,21 @@ export default {
       this.clearMarkers()
 
       const params = {
-        query: this.searchTerm,
-        metropolitanId: this.selectedRegion !== 'all' ? this.selectedRegion : null,
+        //query: this.searchTerm,
+        metropolitanCode: this.selectedRegion !== 'all' ? this.selectedRegion : null,
+        localCode: this.selectedLocal !== 'all' ? this.selectedLocal : null,
+        contentTypeId: this.selectedContentType !== 'all' ? this.selectedContentType : null,
+        isRangeSearch: false,
+        latitude: this.map.getCenter().getLat(),
+        longitude: this.map.getCenter().getLng(),
+        range: 300,
       }
 
       try {
         const response = await searchAttractions(params)
         this.searchResults = response.data.attractions || []
+        this.fetchTime = response.data.fetchTime || '0'
+        console.log("locals: ", this.localOptions)
         this.updateMap()
       } catch (error) {
         console.error('Search error:', error)
@@ -73,6 +81,120 @@ export default {
       } finally {
         this.isLoading = false
       }
+    },
+
+
+    // 지역 선택 변경 처리
+    async onRegionChange() {
+      console.log('지역 변경됨:', this.selectedRegion)
+
+      // 로컬 선택 초기화
+      this.selectedLocal = 'all'
+      this.localOptions = []
+
+      // '전체' 선택 시 로컬 옵션 비우기
+      if (this.selectedRegion === 'all') {
+        return
+      }
+
+      // 선택된 지역의 로컬 옵션 로드
+      await this.loadLocalOptions(this.selectedRegion)
+    },
+
+    // 로컬 옵션 로드
+    async loadLocalOptions(metropolitanCode) {
+      this.isLoadingLocals = true
+
+      try {
+        const response = await getLocals(metropolitanCode)
+
+        if (response.status != 200) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = response.data
+
+        // API 응답 구조에 따라 locals 배열 매핑
+        if (data.locals && Array.isArray(data.locals)) {
+          this.localOptions = data.locals.map(local => ({
+            value: local.id,
+            label: local.name
+          }))
+        } else {
+          console.warn('예상하지 못한 API 응답 구조:', data)
+          this.localOptions = []
+        }
+
+      } catch (error) {
+        console.error('로컬 옵션 로딩 실패:', error)
+        this.localOptions = []
+        this.errorMessage = '지역 정보를 불러오는 중 오류가 발생했습니다.'
+      } finally {
+        this.isLoadingLocals = false
+      }
+    },
+
+    // 여행지 유형 옵션 로드
+    async loadContentTypeOptions() {
+      this.isLoadingContentTypes = true
+
+      try {
+        const response = await getContentsType()
+
+        if (response.status != 200) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = response.data
+
+        // API 응답 구조에 따라 조정 (응답 구조를 모르므로 여러 케이스 대응)
+        let contentTypes = []
+
+        if (data.contentTypes && Array.isArray(data.contentTypes)) {
+          contentTypes = data.contentTypes
+        } else if (data.contents && Array.isArray(data.contents)) {
+          contentTypes = data.contents
+        } else if (data.types && Array.isArray(data.types)) {
+          contentTypes = data.types
+        } else if (Array.isArray(data)) {
+          contentTypes = data
+        } else {
+          console.warn('예상하지 못한 여행지 유형 API 응답 구조:', data)
+          contentTypes = []
+        }
+
+        this.contentTypeOptions = contentTypes.map(type => ({
+          value: type.id,
+          label: type.name || type.typeName || type.title
+        }))
+
+      } catch (error) {
+        console.error('여행지 유형 옵션 로딩 실패:', error)
+        this.contentTypeOptions = []
+
+        // // 개발 환경에서 mock 데이터 사용
+        // if (import.meta.env?.DEV) {
+        //   this.contentTypeOptions = this.getMockContentTypeOptions()
+        //   console.log('Mock 여행지 유형 데이터 사용:', this.contentTypeOptions)
+        // }
+      } finally {
+        console.log(this.contentTypeOptions)
+        this.isLoadingContentTypes = false
+      }
+    },
+
+    // 개발용 Mock 여행지 유형 데이터
+    getMockContentTypeOptions() {
+      return [
+        { value: '12', label: '관광지' },
+        { value: '14', label: '문화시설' },
+        { value: '15', label: '축제공연행사' },
+        { value: '25', label: '여행코스' },
+        { value: '28', label: '레포츠' },
+        { value: '32', label: '숙박' },
+        { value: '38', label: '쇼핑' },
+        { value: '39', label: '음식점' },
+      ]
     },
 
     initializeMap() {
@@ -190,6 +312,13 @@ export default {
         // Use HTTPS protocol explicitly and add timestamp to prevent caching issues
         script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=7f5ff2c0c4a6e2ec642a8dc8b2fe4dc5&libraries=services&autoload=false&t=${new Date().getTime()}`
 
+        if (!apiKey) {
+          apiKey = ''
+          console.warn('환경변수에서 KAKAO API 키를 찾을 수 없어 기본 키를 사용합니다.')
+        }
+
+        const timestamp = new Date().getTime()
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&libraries=services&autoload=false&t=${timestamp}`
         console.log('Loading Kakao Maps with URL:', script.src)
 
         script.onload = () => {
@@ -290,6 +419,9 @@ export default {
           <div class="col-md-4">
             <div class="search-results">
               <h2 class="results-title">검색 결과</h2>
+              <div v-if="searchResults.length != 0">
+                {{ searchResults.length }}개, {{ fetchTime }}초 걸림
+              </div>
 
               <div v-if="errorMessage" class="alert alert-danger">
                 {{ errorMessage }}
