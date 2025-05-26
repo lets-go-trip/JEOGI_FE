@@ -19,6 +19,8 @@ export default defineConfig({
     include: ['sockjs-client', '@stomp/stompjs'],
   },
   server: {
+    host: '0.0.0.0',
+    port: 5173,
     proxy: {
       '/ws': {
         target: 'http://localhost:8080',

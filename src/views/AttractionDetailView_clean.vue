@@ -295,7 +295,7 @@ export default {
     const today = computed(() => {
       const date = new Date()
       const yyyy = date.getFullYear()
-      const mm = String(date.getMonth() + 1).padStart(2, '0') // Months are zero-based
+      const mm = String(date.getMonth() + 1).padStart(2, '0')
       const dd = String(date.getDate()).padStart(2, '0')
       return `${yyyy}-${mm}-${dd}`
     })
@@ -307,7 +307,6 @@ export default {
 
       try {
         const response = await getAttractionDetail(attractionId.value)
-
         attraction.value = response.data
         chatRoomId.value = attractionId.value
 
@@ -336,13 +335,9 @@ export default {
       if (!isLoggedIn.value || !chatRoomId.value) return
 
       try {
-        // Load initial messages
         await loadChatMessages('latest')
-
-        // Connect to WebSocket
         stompClient.value = connectChatRoom(chatRoomId.value, onMessageReceived)
 
-        // Send ENTER message after connection
         setTimeout(() => {
           sendEnterMessage()
         }, 1000)
@@ -360,7 +355,6 @@ export default {
       try {
         isLoadingHistory.value = true
         const response = await getChatMessages(chatRoomId.value, cursorValue)
-
         const data = response.data
         const messages = data.chatMessageList || []
 
@@ -369,7 +363,6 @@ export default {
           return
         }
 
-        // Process messages with isMe flag and ensure all properties are present
         const processedMessages = messages.map((message) => ({
           id: message.id,
           sender: message.sender,
@@ -380,33 +373,24 @@ export default {
           timestamp: message.timestamp || new Date().toISOString(),
         }))
 
-        // Find the lowest ID for cursor
         const lowestId = Math.min(...messages.map((m) => m.id))
 
-        // Check if we've reached the beginning (ID = 1)
         if (lowestId === 1) {
           hasMoreMessages.value = false
         }
 
         if (cursorValue === 'latest') {
-          // Initial load - sort by ID ascending (oldest to newest)
           const sortedMessages = processedMessages.sort((a, b) => a.id - b.id)
-          chatMessages.value = [...sortedMessages] // Create new array for reactivity
+          chatMessages.value = [...sortedMessages]
           cursor.value = lowestId
           await scrollToBottom()
         } else {
-          // Loading previous messages - prepend to beginning
           const scrollHeight = chatMessagesContainer.value?.scrollHeight || 0
-
-          // Sort old messages and prepend them
           const sortedOldMessages = processedMessages.sort((a, b) => a.id - b.id)
-
-          // Create a new array to trigger Vue reactivity properly
           const updatedMessages = [...sortedOldMessages, ...chatMessages.value]
           chatMessages.value = updatedMessages
           cursor.value = lowestId
 
-          // Maintain scroll position
           await nextTick()
           if (chatMessagesContainer.value) {
             const newScrollHeight = chatMessagesContainer.value.scrollHeight
@@ -433,7 +417,6 @@ export default {
           sender: userName.value,
           message: `${userName.value}님이 채팅방에 입장했습니다.`,
         }
-
         await sendChatMessage(enterMessage)
       } catch (error) {
         console.error('Error sending enter message:', error)
@@ -450,10 +433,7 @@ export default {
         isMe: message.sender === userName.value,
         timestamp: message.timestamp || new Date().toISOString(),
       }
-
-      // Simply add new message to the end (no sorting needed for real-time messages)
       chatMessages.value.push(normalizedMessage)
-
       scrollToBottom()
     }
 
@@ -467,7 +447,6 @@ export default {
           sender: userName.value,
           message: newMessage.value.trim(),
         }
-
         await sendChatMessage(messageData)
         newMessage.value = ''
       } catch (error) {
@@ -477,11 +456,8 @@ export default {
 
     const handleScroll = () => {
       if (!chatMessagesContainer.value || isLoadingHistory.value || !hasMoreMessages.value) return
-
       const { scrollTop } = chatMessagesContainer.value
 
-      // Load previous messages when scrolled to top
-      // Only load if cursor is a valid number (not 'latest')
       if (scrollTop === 0 && typeof cursor.value === 'number' && cursor.value > 1) {
         loadChatMessages(cursor.value)
       }
@@ -511,7 +487,6 @@ export default {
     const scrollToBottom = async () => {
       await nextTick()
       if (chatMessagesContainer.value) {
-        // Force scroll to bottom with a small delay to ensure DOM is updated
         setTimeout(() => {
           chatMessagesContainer.value.scrollTop = chatMessagesContainer.value.scrollHeight
         }, 50)
@@ -528,7 +503,6 @@ export default {
           sender: userName.value,
           message: `${userName.value}님이 채팅방을 나갔습니다.`,
         }
-
         await sendChatMessage(leaveMessage)
       } catch (error) {
         console.error('Error sending leave message:', error)
@@ -819,6 +793,7 @@ export default {
   text-decoration: underline;
 }
 
+/* Parking Reservation Styles */
 .parking-reservation {
   margin-top: 30px;
   padding: 20px;
@@ -832,6 +807,31 @@ export default {
   margin-bottom: 15px;
 }
 
+.login-notice-parking {
+  text-align: center;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  color: #666;
+}
+
+.login-button-small {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #3498db;
+  color: white;
+  text-decoration: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: bold;
+  margin-top: 10px;
+  transition: background 0.3s;
+}
+
+.login-button-small:hover {
+  background: #2980b9;
+}
+
 .date-selection,
 .time-selection {
   margin-bottom: 20px;
@@ -842,6 +842,7 @@ export default {
   margin-bottom: 8px;
   font-weight: 500;
   color: #34495e;
+  font-size: 14px;
 }
 
 .date-input,
@@ -911,11 +912,13 @@ export default {
 
 .available {
   background: #d4edda;
+  border: 1px solid #c3e6cb;
   color: #155724;
 }
 
 .unavailable {
   background: #f8d7da;
+  border: 1px solid #f5c6cb;
   color: #721c24;
 }
 
@@ -1007,21 +1010,20 @@ export default {
   font-size: 14px;
 }
 
-/* Chat section styles */
+/* Chat Section */
 .chat-section {
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
-  height: 600px; /* Fixed height for consistent layout */
+  height: 600px;
 }
 
 .chat-container {
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-height: 600px; /* Prevent overflow */
 }
 
 .chat-header {
@@ -1045,8 +1047,7 @@ export default {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  min-height: 0; /* Allow flex shrinking */
-  max-height: calc(600px - 140px); /* Subtract header and input heights */
+  min-height: 0;
 }
 
 .message {
@@ -1102,22 +1103,6 @@ export default {
   font-style: italic;
 }
 
-.no-messages p {
-  margin: 0;
-}
-
-.message-content {
-  max-width: 70%;
-  padding: 12px 16px;
-  border-radius: 18px;
-  background: #ecf0f1;
-}
-
-.own-message .message-content {
-  background: #3498db;
-  color: white;
-}
-
 .message-header {
   display: flex;
   justify-content: space-between;
@@ -1147,8 +1132,6 @@ export default {
   padding: 20px;
   border-top: 1px solid #ecf0f1;
   background: #f8f9fa;
-  flex-shrink: 0; /* Prevent shrinking */
-  min-height: 80px; /* Minimum height for input area */
 }
 
 .connection-status {
@@ -1200,7 +1183,6 @@ export default {
   cursor: not-allowed;
 }
 
-/* Login prompt styles */
 .login-prompt {
   text-align: center;
   padding: 20px;
@@ -1229,34 +1211,32 @@ export default {
   background: #2980b9;
 }
 
-.login-notice {
-  color: #666;
-  font-size: 14px;
-  margin: 0;
-}
+/* Responsive Design */
+@media (max-width: 768px) {
+  .main-content {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
 
-.login-notice-parking {
-  text-align: center;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  color: #666;
-}
+  .attraction-title {
+    font-size: 24px;
+  }
 
-.login-button-small {
-  display: inline-block;
-  padding: 8px 16px;
-  background: #3498db;
-  color: white;
-  text-decoration: none;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: bold;
-  margin-top: 10px;
-  transition: background 0.3s;
-}
+  .attraction-card {
+    padding: 20px;
+  }
 
-.login-button-small:hover {
-  background: #2980b9;
+  .parking-reservation {
+    padding: 15px;
+  }
+
+  .time-group {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .chat-section {
+    height: 500px;
+  }
 }
 </style>

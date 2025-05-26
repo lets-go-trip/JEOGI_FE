@@ -4,8 +4,8 @@ import api from './index'
 export const getAvailableParkingSpaces = async (parkingLotId, startDateTime, endDateTime) => {
   try {
     const params = {
-      startDateTime: startDateTime.toISOString().slice(0, 16), // yyyy-MM-ddTHH:mm 형식
-      endDateTime: endDateTime.toISOString().slice(0, 16),
+      startDateTime: startDateTime, // 이미 yyyy-MM-ddTHH:mm:ss 형식의 문자열
+      endDateTime: endDateTime,
     }
 
     const response = await api.get(`/api/v1/parking-reservations/${parkingLotId}`, { params })
@@ -20,8 +20,8 @@ export const getAvailableParkingSpaces = async (parkingLotId, startDateTime, end
 export const createParkingReservation = async (parkingLotId, startDateTime, endDateTime) => {
   try {
     const requestData = {
-      startDateTime: startDateTime.toISOString().slice(0, 16), // yyyy-MM-ddTHH:mm 형식
-      endDateTime: endDateTime.toISOString().slice(0, 16),
+      startDateTime: startDateTime, // 이미 yyyy-MM-ddTHH:mm:ss 형식의 문자열
+      endDateTime: endDateTime,
     }
 
     const response = await api.post(`/api/v1/parking-lots/${parkingLotId}/reservation`, requestData)

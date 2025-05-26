@@ -33,7 +33,7 @@ export default {
 
       try {
         const response = await getMyReservations()
-        this.reservations = response.data.reservations || []
+        this.reservations = response.data.responseReservations || []
       } catch (error) {
         console.error('Error fetching reservations:', error)
         this.errorMessage = '예약 정보를 불러오는 중 오류가 발생했습니다.'
@@ -49,8 +49,10 @@ export default {
       const year = date.getFullYear()
       const month = String(date.getMonth() + 1).padStart(2, '0')
       const day = String(date.getDate()).padStart(2, '0')
+      const hours = String(date.getHours()).padStart(2, '0')
+      const minutes = String(date.getMinutes()).padStart(2, '0')
 
-      return `${year}년 ${month}월 ${day}일`
+      return `${year}년 ${month}월 ${day}일 ${hours}:${minutes}`
     },
 
     formatTime(dateTimeString) {
@@ -116,8 +118,8 @@ export default {
       <div v-else class="reservations-container">
         <div class="reservation-card" v-for="reservation in reservations" :key="reservation.id">
           <div class="reservation-header">
-            <h2 class="reservation-title">{{ reservation.parkingLot.attraction.title }}</h2>
-            <span class="reservation-id">예약번호: #{{ reservation.id }}</span>
+            <h2 class="reservation-title">{{ reservation.attractionName }}</h2>
+            <span class="reservation-id">예약번호: #{{ reservation.reservationId }}</span>
           </div>
 
           <div class="reservation-body">
@@ -134,14 +136,6 @@ export default {
                 <span class="detail-value">
                   {{ formatTime(reservation.reservationPeriod.startDateTime) }} ~
                   {{ formatTime(reservation.reservationPeriod.endDateTime) }}
-                </span>
-              </div>
-
-              <div class="detail-item">
-                <span class="detail-label">주소:</span>
-                <span class="detail-value">
-                  {{ reservation.parkingLot.attraction.addr1 }}
-                  {{ reservation.parkingLot.attraction.addr2 }}
                 </span>
               </div>
 
