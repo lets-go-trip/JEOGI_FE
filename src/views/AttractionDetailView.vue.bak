@@ -42,118 +42,103 @@
             <!-- Parking Reservation Section -->
             <div class="parking-reservation">
               <h3 class="section-title">주차 예약</h3>
+              
+              <!-- Date Selection -->
+              <div class="date-selection">
+                <label for="reservation-date" class="form-label">예약 날짜</label>
+                <input
+                  id="reservation-date"
+                  v-model="selectedDate"
+                  type="date"
+                  :min="today"
+                  class="date-input"
+                  @change="resetTimeSelection"
+                />
+              </div>
+
+              <!-- Time Selection -->
+              <div v-if="selectedDate" class="time-selection">
+                <div class="time-group">
+                  <label for="start-time" class="form-label">시작 시간</label>
+                  <input
+                    id="start-time"
+                    v-model="startTime"
+                    type="time"
+                    class="time-input"
+                    @change="onTimeChange"
+                  />
+                </div>
+                
+                <div class="time-group">
+                  <label for="end-time" class="form-label">종료 시간</label>
+                  <input
+                    id="end-time"
+                    v-model="endTime"
+                    type="time"
+                    class="time-input"
+                    :min="startTime"
+                    @change="onTimeChange"
+                  />
+                </div>
+              </div>
+
+              <!-- Check Availability Button -->
+              <div v-if="selectedDate && startTime && endTime" class="check-availability">
+                <button
+                  @click="checkAvailability"
+                  :disabled="isCheckingAvailability"
+                  class="check-button"
+                >
+                  <span v-if="isCheckingAvailability">확인 중...</span>
+                  <span v-else>예약 가능 여부 확인</span>
+                </button>
+              </div>
+
+              <!-- Available Spaces Display -->
+              <div v-if="availableSpaces !== null" class="availability-result">
+                <div v-if="availableSpaces > 0" class="available">
+                  <div class="availability-info">
+                    <span class="availability-text">예약 가능한 주차 공간: </span>
+                    <span class="spaces-count">{{ availableSpaces }}개</span>
+                  </div>
+                  <button
+                    @click="makeReservation"
+                    :disabled="isReserving"
+                    class="reserve-button available"
+                  >
+                    <span v-if="isReserving">예약 중...</span>
+                    <span v-else>주차 예약하기</span>
+                  </button>
+                </div>
+                
+                <div v-else class="unavailable">
+                  <div class="availability-info">
+                    <span class="availability-text">해당 시간에는 예약 가능한 주차 공간이 없습니다.</span>
+                  </div>
+                  <button disabled class="reserve-button unavailable">
+                    예약 불가
+                  </button>
+                </div>
+              </div>
+
+              <!-- Reservation Result -->
+              <div v-if="reservationResult" class="reservation-result">
+                <div v-if="reservationResult.success" class="success-message">
+                  <h4>✅ 예약이 완료되었습니다!</h4>
+                  <p><strong>예약 번호:</strong> {{ reservationResult.data.reservationId }}</p>
+                  <p><strong>예약 시간:</strong> {{ formatDateTime(reservationResult.data.startDateTime) }} ~ {{ formatDateTime(reservationResult.data.endDateTime) }}</p>
+                </div>
+                
+                <div v-else class="error-message">
+                  <h4>❌ 예약에 실패했습니다.</h4>
+                  <p>{{ reservationResult.message }}</p>
+                </div>
+              </div>
 
               <!-- Login Notice for non-authenticated users -->
               <div v-if="!isLoggedIn" class="login-notice-parking">
                 <p>주차 예약을 위해서는 로그인이 필요합니다.</p>
                 <router-link to="/login" class="login-button-small">로그인하기</router-link>
-              </div>
-
-              <div v-else>
-                <!-- Date Selection -->
-                <div class="date-selection">
-                  <label for="reservation-date" class="form-label">예약 날짜</label>
-                  <input
-                    id="reservation-date"
-                    v-model="selectedDate"
-                    type="date"
-                    :min="today"
-                    class="date-input"
-                    @change="resetTimeSelection"
-                  />
-                </div>
-
-                <!-- Time Selection -->
-                <div v-if="selectedDate" class="time-selection">
-                  <div class="time-group">
-                    <div class="time-field">
-                      <label for="start-time" class="form-label">시작 시간</label>
-                      <input
-                        id="start-time"
-                        v-model="startTime"
-                        type="time"
-                        step="3600"
-                        class="time-input"
-                        @change="onTimeChange"
-                        @input="onTimeChange"
-                      />
-                    </div>
-
-                    <div class="time-field">
-                      <label for="end-time" class="form-label">종료 시간</label>
-                      <input
-                        id="end-time"
-                        v-model="endTime"
-                        type="time"
-                        step="3600"
-                        class="time-input"
-                        :min="startTime"
-                        @change="onTimeChange"
-                        @input="onTimeChange"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Check Availability Button -->
-                <div v-if="selectedDate && startTime && endTime" class="check-availability">
-                  <button
-                    @click="checkAvailability"
-                    :disabled="isCheckingAvailability"
-                    class="check-button"
-                  >
-                    <span v-if="isCheckingAvailability">확인 중...</span>
-                    <span v-else>예약 가능 여부 확인</span>
-                  </button>
-                </div>
-
-                <!-- Available Spaces Display -->
-                <div v-if="availableSpaces !== null" class="availability-result">
-                  <div v-if="availableSpaces > 0" class="available">
-                    <div class="availability-info">
-                      <span class="availability-text">예약 가능한 주차 공간: </span>
-                      <span class="spaces-count">{{ availableSpaces }}개</span>
-                    </div>
-                    <button
-                      @click="makeReservation"
-                      :disabled="isReserving"
-                      class="reserve-button available"
-                    >
-                      <span v-if="isReserving">예약 중...</span>
-                      <span v-else>주차 예약하기</span>
-                    </button>
-                  </div>
-
-                  <div v-else class="unavailable">
-                    <div class="availability-info">
-                      <span class="availability-text"
-                        >해당 시간에는 예약 가능한 주차 공간이 없습니다.</span
-                      >
-                    </div>
-                    <button disabled class="reserve-button unavailable">예약 불가</button>
-                  </div>
-                </div>
-
-                <!-- Reservation Result -->
-                <div v-if="reservationResult" class="reservation-result">
-                  <div v-if="reservationResult.success" class="success-message">
-                    <h4>✅ 예약이 완료되었습니다!</h4>
-                    <p>
-                      <strong>예약자 아이디:</strong>
-                      {{ reservationResult.data.username || reservationResult.data.id }}
-                    </p>
-                    <p>
-                      <strong>예약 시간:</strong>
-                      {{ formatDateTime(reservationResult.data.reservationPeriod.startDateTime) }} ~
-                      {{ formatDateTime(reservationResult.data.reservationPeriod.endDateTime) }}
-                    </p>
-                  </div>
-
-                  <div v-else class="error-message">
-                    <h4>❌ 예약에 실패했습니다.</h4>
-                    <p>{{ reservationResult.message }}</p>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -284,6 +269,9 @@ export default {
     const endTime = ref('')
     const availableSpaces = ref(null)
     const isCheckingAvailability = ref(false)
+    const isReserving = ref(false)
+    const reservationResult = ref(null)
+    const today = new Date().toISOString().split('T')[0]
     const isReserving = ref(false)
     const reservationResult = ref(null)
 
@@ -496,18 +484,6 @@ export default {
       })
     }
 
-    const formatDateTime = (dateTimeString) => {
-      if (!dateTimeString) return ''
-      const date = new Date(dateTimeString)
-      return date.toLocaleString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    }
-
     const scrollToBottom = async () => {
       await nextTick()
       if (chatMessagesContainer.value) {
@@ -554,32 +530,16 @@ export default {
       startTime.value = ''
       endTime.value = ''
       availableSpaces.value = null
-      reservationResult.value = null
     }
 
     const onTimeChange = () => {
-      // 시작 시간과 종료 시간 모두 분을 00으로 강제 설정
-      if (startTime.value) {
-        const [startHour] = startTime.value.split(':')
-        startTime.value = `${String(startHour).padStart(2, '0')}:00`
-
-        // 종료 시간이 없거나 시작 시간보다 작거나 같으면 자동 설정
-        if (!endTime.value) {
-          const endHour = parseInt(startHour) + 1
-          if (endHour < 24) {
-            endTime.value = `${String(endHour).padStart(2, '0')}:00`
-          }
-        }
+      // Automatically set end time to 1 hour later by default
+      if (startTime.value && !endTime.value) {
+        const [startHour, startMinute] = startTime.value.split(':')
+        const endHour = parseInt(startHour) + 1
+        const endMinute = startMinute
+        endTime.value = `${String(endHour).padStart(2, '0')}:${endMinute}`
       }
-
-      if (endTime.value) {
-        const [endHour] = endTime.value.split(':')
-        endTime.value = `${String(endHour).padStart(2, '0')}:00`
-      }
-
-      // Reset availability when time changes
-      availableSpaces.value = null
-      reservationResult.value = null
     }
 
     const checkAvailability = async () => {
@@ -589,82 +549,69 @@ export default {
       availableSpaces.value = null
 
       try {
-        // 분을 0분으로 고정하고 시간대 보정 없이 직접 문자열 생성
-        const [startHour] = startTime.value.split(':')
-        const [endHour] = endTime.value.split(':')
+        // Simulate API call
+        setTimeout(() => {
+          // For demo, randomly assign available spaces
+          availableSpaces.value = Math.floor(Math.random() * 10)
+          isCheckingAvailability.value = false
+        }, 1000)
 
-        // ISO 형식으로 직접 문자열 생성 (시간대 보정 방지)
-        const startDateTime = `${selectedDate.value}T${String(startHour).padStart(2, '0')}:00:00`
-        const endDateTime = `${selectedDate.value}T${String(endHour).padStart(2, '0')}:00:00`
+        /*
+        Uncomment and modify the following code to integrate with the actual API
 
-        // Use attraction ID as parking lot ID (assuming they're the same)
-        const response = await getAvailableParkingSpaces(
-          attractionId.value,
-          startDateTime,
-          endDateTime,
-        )
+        const response = await checkParkingAvailability({
+          date: selectedDate.value,
+          startTime: startTime.value,
+          endTime: endTime.value,
+        })
 
-        // The API returns the number directly
-        availableSpaces.value = response.data
+        availableSpaces.value = response.data.availableSpaces
+        isCheckingAvailability.value = false
+        */
       } catch (error) {
         console.error('Error checking availability:', error)
-        availableSpaces.value = 0
-        // Show error message
-        reservationResult.value = {
-          success: false,
-          message: '예약 가능 여부 확인 중 오류가 발생했습니다.',
-        }
-      } finally {
         isCheckingAvailability.value = false
       }
     }
 
     const makeReservation = async () => {
-      if (!selectedDate.value || !startTime.value || !endTime.value || availableSpaces.value <= 0)
-        return
+      if (!selectedDate.value || !startTime.value || !endTime.value || availableSpaces.value === null) return
 
       isReserving.value = true
       reservationResult.value = null
 
       try {
-        // 분을 0분으로 고정하고 시간대 보정 없이 직접 문자열 생성
-        const [startHour] = startTime.value.split(':')
-        const [endHour] = endTime.value.split(':')
+        // Simulate API call
+        setTimeout(() => {
+          reservationResult.value = {
+            success: true,
+            data: {
+              reservationId: 'ABC123456',
+              startDateTime: `${selectedDate.value}T${startTime.value}:00`,
+              endDateTime: `${selectedDate.value}T${endTime.value}:00`,
+            },
+          }
+          isReserving.value = false
+        }, 1000)
 
-        // ISO 형식으로 직접 문자열 생성 (시간대 보정 방지)
-        const startDateTime = `${selectedDate.value}T${String(startHour).padStart(2, '0')}:00:00`
-        const endDateTime = `${selectedDate.value}T${String(endHour).padStart(2, '0')}:00:00`
+        /*
+        Uncomment and modify the following code to integrate with the actual API
 
-        // Use attraction ID as parking lot ID (assuming they're the same)
-        const response = await createParkingReservation(
-          attractionId.value,
-          startDateTime,
-          endDateTime,
-        )
+        const response = await makeParkingReservation({
+          date: selectedDate.value,
+          startTime: startTime.value,
+          endTime: endTime.value,
+        })
 
-        reservationResult.value = {
-          success: true,
-          data: response.data,
-        }
+        reservationResult.value = response.data
+        isReserving.value = false
+        */
       } catch (error) {
         console.error('Error making reservation:', error)
-        let errorMessage = '예약 처리 중 오류가 발생했습니다.'
-
-        if (error.response?.data?.message) {
-          errorMessage = error.response.data.message
-        } else if (error.response?.status === 400) {
-          errorMessage = '입력한 정보를 다시 확인해주세요.'
-        } else if (error.response?.status === 401) {
-          errorMessage = '로그인이 필요합니다.'
-        } else if (error.response?.status === 409) {
-          errorMessage = '해당 시간에는 이미 예약이 가득찼습니다.'
-        }
-
         reservationResult.value = {
           success: false,
-          message: errorMessage,
+          message: '예약 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
         }
-      } finally {
         isReserving.value = false
       }
     }
@@ -717,7 +664,6 @@ export default {
       sendMessage,
       handleScroll,
       formatTime,
-      formatDateTime,
       scrollToBottom,
       sendLeaveMessage,
       disconnectFromChat,
@@ -852,32 +798,24 @@ export default {
   border-radius: 8px;
   outline: none;
   font-size: 14px;
-  transition: border-color 0.3s;
 }
 
 .date-input:focus,
 .time-input:focus {
   border-color: #3498db;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
 }
 
 .time-group {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px;
-}
-
-.time-field {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .check-availability {
-  margin: 20px 0;
+  margin-top: 10px;
 }
 
 .check-button {
-  width: 100%;
   padding: 12px 20px;
   background: #3498db;
   color: white;
@@ -923,12 +861,11 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
 }
 
 .availability-text {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
 }
 
 .spaces-count {
@@ -937,8 +874,7 @@ export default {
 }
 
 .reserve-button {
-  width: 100%;
-  padding: 12px 18px;
+  padding: 10px 18px;
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -952,59 +888,32 @@ export default {
   color: white;
 }
 
-.reserve-button.available:hover:not(:disabled) {
-  background: #218838;
-}
-
 .reserve-button.unavailable {
   background: #dc3545;
   color: white;
   cursor: not-allowed;
 }
 
-.reserve-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .reservation-result {
   margin-top: 20px;
+  padding: 15px;
+  border-radius: 8px;
 }
 
 .success-message {
   background: #d1e7dd;
-  border: 1px solid #badbcc;
   color: #0f5132;
   padding: 15px;
   border-radius: 8px;
 }
 
-.success-message h4 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.success-message p {
-  margin: 5px 0;
-  font-size: 14px;
-}
-
 .error-message {
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
+  background: #fee;
+  color: #c33;
   padding: 15px;
   border-radius: 8px;
-}
-
-.error-message h4 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.error-message p {
-  margin: 5px 0;
-  font-size: 14px;
+  border-left: 4px solid #e74c3c;
+  margin: 20px 0;
 }
 
 /* Chat section styles */
@@ -1233,30 +1142,5 @@ export default {
   color: #666;
   font-size: 14px;
   margin: 0;
-}
-
-.login-notice-parking {
-  text-align: center;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  color: #666;
-}
-
-.login-button-small {
-  display: inline-block;
-  padding: 8px 16px;
-  background: #3498db;
-  color: white;
-  text-decoration: none;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: bold;
-  margin-top: 10px;
-  transition: background 0.3s;
-}
-
-.login-button-small:hover {
-  background: #2980b9;
 }
 </style>
