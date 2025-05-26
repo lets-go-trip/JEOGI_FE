@@ -5,7 +5,7 @@ export function searchAttractions(searchParams) {
 }
 
 export function getAttractionDetail(attractionId) {
-  return apiClient.get(`/api/search/attractions/${attractionId}`)
+  return apiClient.get(`/api/attractions/${attractionId}`)
 }
 
 export function getLocals(metropolitanCode) {

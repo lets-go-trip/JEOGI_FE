@@ -1,56 +1,53 @@
 import apiClient from './index'
 import SockJS from 'sockjs-client'
-import { Client } from '@stomp/stompjs'
+import { Stomp } from '@stomp/stompjs'
 
 let stompClient = null
 
 export function connectChatRoom(roomId, onMessageReceived) {
-  const socket = new SockJS('/ws')
-  stompClient = new Client({
-    webSocketFactory: () => socket,
-    debug: function (str) {
-      console.log(str)
+  // Use SockJS like the working example
+  const sockJS = new SockJS('http://localhost:8080/ws')
+  stompClient = Stomp.over(sockJS)
+
+  // Set heartbeat
+  stompClient.heartbeat.outgoing = 20000
+  stompClient.heartbeat.incoming = 20000
+
+  stompClient.connect(
+    {},
+    (frame) => {
+      console.log('Connected: ' + frame)
+      // Subscribe to the chat room - using /sub prefix as per backend config
+      stompClient.subscribe(`/sub/chat/room/${roomId}`, (message) => {
+        const received = JSON.parse(message.body)
+        onMessageReceived(received)
+      })
     },
-    reconnectDelay: 5000,
-    heartbeatIncoming: 4000,
-    heartbeatOutgoing: 4000,
-  })
+    (error) => {
+      console.error('Connection error:', error)
+    },
+  )
 
-  stompClient.onConnect = (frame) => {
-    console.log('Connected: ' + frame)
-    stompClient.subscribe(`/topic/chat/room/${roomId}`, (message) => {
-      const received = JSON.parse(message.body)
-      onMessageReceived(received)
-    })
-  }
-
-  stompClient.onStompError = (frame) => {
-    console.error('Broker reported error: ' + frame.headers['message'])
-    console.error('Additional details: ' + frame.body)
-  }
-
-  stompClient.activate()
   return stompClient
 }
 
 export function disconnectChat() {
-  if (stompClient) {
-    stompClient.deactivate()
+  if (stompClient && stompClient.connected) {
+    stompClient.disconnect()
     stompClient = null
   }
 }
 
 export function sendChatMessage(message) {
   if (stompClient && stompClient.connected) {
-    stompClient.publish({
-      destination: '/app/chat/message',
-      body: JSON.stringify(message),
-    })
+    // Send message using /pub prefix as per backend config
+    stompClient.send('/pub/chat/message', {}, JSON.stringify(message))
   } else {
     console.error('STOMP client not connected')
   }
 }
 
 export function getChatMessages(roomId, cursor = 'latest') {
+  console.log(`메시지 가져오기 사용 ${cursor}`)
   return apiClient.get(`/api/chat/${roomId}/${cursor}`)
 }

@@ -1,6 +1,17 @@
 <script>
+import { onMounted } from 'vue'
+import { useStore } from 'vuex'
+
 export default {
   name: 'App',
+  setup() {
+    const store = useStore()
+
+    onMounted(() => {
+      // Restore login state from localStorage on app startup
+      store.dispatch('auth/autoLogin')
+    })
+  },
 }
 </script>
 

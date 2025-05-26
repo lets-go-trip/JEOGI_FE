@@ -1,420 +1,123 @@
-<script>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import NavBar from '@/components/common/NavBar.vue'
-import { getAttractionDetail } from '@/api/attractions'
-import { getAvailableParkingSpaces, createParkingReservation } from '@/api/reservations'
-import { connectChatRoom, disconnectChat, sendChatMessage, getChatMessages } from '@/api/chat'
-
-export default {
-  name: 'AttractionDetailView',
-  components: {
-    NavBar,
-  },
-  props: {
-    id: {
-      type: String,
-      required: true,
-    },
-  },
-  setup(props) {
-    const attraction = ref(null)
-    const isLoading = ref(true)
-    const errorMessage = ref('')
-    const chatMessages = ref([])
-    const newMessage = ref('')
-    const chatRoomId = ref('')
-    const parkingSpaces = ref(null)
-    const stompClient = ref(null)
-
-    // Reservation form
-    const showReservationForm = ref(false)
-    const reservationDate = ref('')
-    const startTime = ref('')
-    const endTime = ref('')
-    const reservationSuccess = ref(false)
-    const reservationError = ref('')
-
-    return {
-      attraction,
-      isLoading,
-      errorMessage,
-      chatMessages,
-      newMessage,
-      chatRoomId,
-      parkingSpaces,
-      stompClient,
-      showReservationForm,
-      reservationDate,
-      startTime,
-      endTime,
-      reservationSuccess,
-      reservationError,
-    }
-  },
-  computed: {
-    isLoggedIn() {
-      return this.$store.getters['auth/isLoggedIn']
-    },
-    currentUser() {
-      return this.$store.getters['auth/currentUser']
-    },
-    userName() {
-      return this.currentUser?.nickname || this.currentUser?.username || 'Anonymous'
-    },
-    formattedReservationDateTime() {
-      if (!this.reservationDate || !this.startTime || !this.endTime) return null
-
-      const startDateTime = `${this.reservationDate}T${this.startTime}:00`
-      const endDateTime = `${this.reservationDate}T${this.endTime}:00`
-
-      return {
-        startDateTime,
-        endDateTime,
-      }
-    },
-    todayDate() {
-      const today = new Date()
-      const year = today.getFullYear()
-      const month = String(today.getMonth() + 1).padStart(2, '0')
-      const day = String(today.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    },
-    parkingLotId() {
-      return this.attraction?.parkingLot?.id
-    },
-  },
-  methods: {
-    async fetchAttractionDetail() {
-      this.isLoading = true
-
-      try {
-        const response = await getAttractionDetail(this.id)
-        this.attraction = response.data
-
-        // Set chat room ID based on attraction ID
-        this.chatRoomId = `attraction_${this.id}`
-
-        // Fetch parking information if available
-        if (this.attraction.parkingLot) {
-          this.fetchParkingSpaces()
-        }
-
-        // Connect to chat room
-        this.connectToChat()
-      } catch (error) {
-        console.error('Error fetching attraction details:', error)
-        this.errorMessage = '여행지 정보를 불러오는 중 오류가 발생했습니다.'
-      } finally {
-        this.isLoading = false
-      }
-    },
-
-    async fetchParkingSpaces() {
-      if (!this.parkingLotId) return
-
-      try {
-        const today = new Date()
-        const year = today.getFullYear()
-        const month = String(today.getMonth() + 1).padStart(2, '0')
-        const day = String(today.getDate()).padStart(2, '0')
-        const formattedDate = `${year}-${month}-${day}`
-
-        const response = await getAvailableParkingSpaces(this.parkingLotId, {
-          startDateTime: `${formattedDate}T00:00:00`,
-          endDateTime: `${formattedDate}T23:59:59`,
-        })
-
-        this.parkingSpaces = response.data
-      } catch (error) {
-        console.error('Error fetching parking spaces:', error)
-      }
-    },
-
-    async connectToChat() {
-      if (!this.isLoggedIn || !this.chatRoomId) return
-
-      try {
-        // Fetch existing messages
-        const response = await getChatMessages(this.chatRoomId)
-        this.chatMessages = response.data.messages || []
-
-        // Connect to chat with WebSocket
-        this.stompClient = connectChatRoom(this.chatRoomId, this.onMessageReceived)
-
-        // Send enter message
-        setTimeout(() => {
-          this.sendEnterMessage()
-        }, 1000)
-      } catch (error) {
-        console.error('Error connecting to chat:', error)
-      }
-    },
-
-    onMessageReceived(message) {
-      this.chatMessages.push(message)
-      this.scrollToBottom()
-    },
-
-    sendEnterMessage() {
-      if (!this.stompClient || !this.chatRoomId) return
-
-      sendChatMessage({
-        type: 'ENTER',
-        roomId: this.chatRoomId,
-        sender: this.userName,
-        message: `${this.userName}님이 입장하셨습니다.`,
-      })
-    },
-
-    sendMessage() {
-      if (!this.newMessage.trim() || !this.stompClient) return
-
-      sendChatMessage({
-        type: 'TALK',
-        roomId: this.chatRoomId,
-        sender: this.userName,
-        message: this.newMessage,
-      })
-
-      this.newMessage = ''
-    },
-
-    scrollToBottom() {
-      this.$nextTick(() => {
-        const chatContainer = this.$refs.chatMessages
-        if (chatContainer) {
-          chatContainer.scrollTop = chatContainer.scrollHeight
-        }
-      })
-    },
-
-    async makeReservation() {
-      if (!this.isLoggedIn || !this.parkingLotId) return
-
-      if (!this.formattedReservationDateTime) {
-        this.reservationError = '예약 날짜와 시간을 모두 선택해주세요.'
-        return
-      }
-
-      this.reservationError = ''
-      this.reservationSuccess = false
-
-      try {
-        const response = await createParkingReservation(
-          this.parkingLotId,
-          this.formattedReservationDateTime,
-        )
-        this.reservationSuccess = true
-        this.showReservationForm = false
-
-        // Refresh parking spaces
-        this.fetchParkingSpaces()
-      } catch (error) {
-        console.error('Reservation error:', error)
-        if (error.response && error.response.data && error.response.data.error) {
-          this.reservationError = error.response.data.error
-        } else {
-          this.reservationError = '주차 예약에 실패했습니다. 다시 시도해주세요.'
-        }
-      }
-    },
-
-    toggleReservationForm() {
-      this.showReservationForm = !this.showReservationForm
-      this.reservationError = ''
-      this.reservationSuccess = false
-
-      if (this.showReservationForm) {
-        this.reservationDate = this.todayDate
-      }
-    },
-  },
-  mounted() {
-    this.fetchAttractionDetail()
-  },
-  beforeUnmount() {
-    disconnectChat()
-  },
-  watch: {
-    id() {
-      this.fetchAttractionDetail()
-    },
-  },
-}
-</script>
-
 <template>
-  <NavBar />
-  <div class="attraction-detail-view">
-    <div v-if="isLoading" class="loading-container">
-      <p>여행지 정보를 불러오는 중...</p>
-    </div>
-
-    <div v-else-if="errorMessage" class="error-container">
-      <div class="alert alert-danger">{{ errorMessage }}</div>
-      <router-link to="/search" class="btn btn-primary">여행지 검색으로 돌아가기</router-link>
-    </div>
-
-    <div v-else-if="attraction" class="detail-container">
-      <div class="attraction-header">
-        <div class="container">
-          <h1 class="attraction-title">{{ attraction.title }}</h1>
-          <div class="attraction-meta">
-            <span class="attraction-location">{{ attraction.addr1 }} {{ attraction.addr2 }}</span>
-            <span class="attraction-category" v-if="attraction.contentTypes">{{
-              attraction.contentTypes.typeName
-            }}</span>
-          </div>
-        </div>
+  <div>
+    <NavBar />
+    <div class="attraction-detail-container">
+      <!-- Loading State -->
+      <div v-if="isLoading" class="loading">
+        <p>여행지 정보를 불러오는 중...</p>
       </div>
 
-      <div class="container">
-        <div class="row">
-          <div class="col-md-8">
-            <div class="attraction-main">
-              <div class="attraction-image" v-if="attraction.firstimage">
-                <img :src="attraction.firstimage" :alt="attraction.title" />
-              </div>
+      <!-- Error State -->
+      <div v-else-if="errorMessage" class="error">
+        <p>{{ errorMessage }}</p>
+      </div>
 
-              <div class="attraction-description" v-if="attraction.overview">
-                <h2>여행지 소개</h2>
-                <p>{{ attraction.overview }}</p>
-              </div>
-
-              <div class="attraction-info">
-                <h2>상세 정보</h2>
-                <div class="info-item" v-if="attraction.tel">
-                  <strong>전화번호:</strong> {{ attraction.tel }}
-                </div>
-                <div class="info-item" v-if="attraction.homepage">
-                  <strong>홈페이지:</strong>
-                  <a :href="attraction.homepage" target="_blank" rel="noopener noreferrer">{{
-                    attraction.homepage
-                  }}</a>
-                </div>
-                <div class="info-item" v-if="attraction.zipcode">
-                  <strong>우편번호:</strong> {{ attraction.zipcode }}
-                </div>
-              </div>
-
-              <div class="attraction-map" v-if="attraction.mapx && attraction.mapy">
-                <h2>위치 정보</h2>
-                <div id="detail-map" class="detail-map-container"></div>
-              </div>
+      <!-- Main Content -->
+      <div v-else-if="attraction" class="main-content">
+        <!-- Attraction Details Section -->
+        <div class="attraction-section">
+          <div class="attraction-card">
+            <h1 class="attraction-title">{{ attraction.title }}</h1>
+            <div class="attraction-info">
+              <img
+                :src="
+                  attraction.imgUrl && attraction.imgUrl.length
+                    ? attraction.imgUrl
+                    : 'http://lsh318204.cafe24.com/wp-content/uploads/kboard_attached/8/201906/5cf728d931fab7574308-600x338.jpg'
+                "
+                alt="Attraction Image"
+                class="attraction-image"
+              />
+              <p><strong>주소:</strong> {{ attraction.address }}</p>
+              <p v-if="attraction.overview"><strong>설명:</strong> {{ attraction.overview }}</p>
+              <p v-if="attraction.tel"><strong>전화번호:</strong> {{ attraction.tel }}</p>
+              <p v-if="attraction.homepage">
+                <strong>홈페이지:</strong>
+                <a :href="attraction.homepage" target="_blank">{{ attraction.homepage }}</a>
+              </p>
             </div>
           </div>
+        </div>
 
-          <div class="col-md-4">
-            <div class="attraction-sidebar">
-              <div class="parking-info" v-if="parkingLotId">
-                <h2>주차장 정보</h2>
-                <div v-if="parkingSpaces !== null" class="parking-availability">
-                  <p class="available-spaces">
-                    잔여 주차 공간: <strong>{{ parkingSpaces }}</strong> /
-                    {{ attraction.parkingLot.totalCount }}
-                  </p>
-                  <button
-                    @click="toggleReservationForm"
-                    class="btn btn-primary btn-block"
-                    :disabled="!isLoggedIn"
-                  >
-                    주차 예약하기
-                  </button>
-                  <p v-if="!isLoggedIn" class="text-muted mt-2">예약하려면 로그인해주세요.</p>
-                </div>
+        <!-- Chat Section -->
+        <div class="chat-section">
+          <div class="chat-container">
+            <div class="chat-header">
+              <h3>실시간 채팅</h3>
+              <p v-if="!isLoggedIn" class="login-notice">채팅에 참여하려면 로그인이 필요합니다.</p>
+            </div>
 
-                <div v-if="showReservationForm" class="reservation-form mt-3">
-                  <h3>주차 예약</h3>
-
-                  <div v-if="reservationError" class="alert alert-danger">
-                    {{ reservationError }}
-                  </div>
-
-                  <div v-if="reservationSuccess" class="alert alert-success">
-                    주차 예약이 완료되었습니다.
-                  </div>
-
-                  <div class="form-group">
-                    <label for="reservationDate">날짜</label>
-                    <input
-                      id="reservationDate"
-                      v-model="reservationDate"
-                      type="date"
-                      class="form-control"
-                      :min="todayDate"
-                    />
-                  </div>
-
-                  <div class="form-group">
-                    <label for="startTime">시작 시간</label>
-                    <input id="startTime" v-model="startTime" type="time" class="form-control" />
-                  </div>
-
-                  <div class="form-group">
-                    <label for="endTime">종료 시간</label>
-                    <input id="endTime" v-model="endTime" type="time" class="form-control" />
-                  </div>
-
-                  <div class="form-actions">
-                    <button @click="makeReservation" class="btn btn-primary btn-block">
-                      예약하기
-                    </button>
-                    <button @click="toggleReservationForm" class="btn btn-outline btn-block mt-2">
-                      취소
-                    </button>
-                  </div>
-                </div>
+            <!-- Chat Messages -->
+            <div class="chat-messages" ref="chatMessagesContainer" @scroll="handleScroll">
+              <!-- Loading Indicator -->
+              <div v-if="isLoadingHistory" class="loading-indicator">
+                <small class="text-muted">이전 메시지를 불러오는 중...</small>
               </div>
 
-              <div class="chat-container">
-                <h2>실시간 채팅</h2>
-
-                <div v-if="!isLoggedIn" class="login-prompt">
-                  <p>채팅에 참여하려면 로그인해주세요.</p>
-                  <router-link to="/login" class="btn btn-primary btn-block"
-                    >로그인하기</router-link
-                  >
-                </div>
-
-                <div v-else class="chat-box">
-                  <div ref="chatMessages" class="chat-messages">
-                    <div
-                      v-for="(message, index) in chatMessages"
-                      :key="index"
-                      class="chat-message"
-                      :class="{
-                        'system-message': message.type === 'ENTER',
-                        'my-message': message.sender === userName,
-                      }"
-                    >
-                      <div v-if="message.type === 'ENTER'" class="message-content system">
-                        {{ message.message }}
-                      </div>
-                      <div v-else class="message-content">
-                        <div class="message-sender">{{ message.sender }}</div>
-                        <div class="message-text">{{ message.message }}</div>
-                      </div>
+              <div
+                v-for="message in chatMessages"
+                :key="`message-${message.id}-${message.timestamp}`"
+                :class="[
+                  'message',
+                  {
+                    'own-message': message.isMe && message.type === 'TALK',
+                    'other-message': !message.isMe && message.type === 'TALK',
+                    'system-message': message.type === 'ENTER' || message.type === 'LEAVE',
+                  },
+                ]"
+              >
+                <div
+                  :class="{
+                    'message-content': message.type === 'TALK',
+                    'system-content': message.type === 'ENTER' || message.type === 'LEAVE',
+                  }"
+                >
+                  <template v-if="message.type === 'TALK'">
+                    <div class="message-header">
+                      <span class="username">{{ message.sender }}</span>
+                      <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
                     </div>
-                  </div>
-
-                  <div class="chat-input">
-                    <input
-                      v-model="newMessage"
-                      type="text"
-                      class="form-control"
-                      placeholder="메시지를 입력하세요"
-                      @keyup.enter="sendMessage"
-                    />
-                    <button
-                      @click="sendMessage"
-                      class="btn btn-primary"
-                      :disabled="!newMessage.trim()"
-                    >
-                      전송
-                    </button>
-                  </div>
+                    <div class="message-text">{{ message.message }}</div>
+                  </template>
+                  <template v-else>
+                    <div class="system-text">{{ message.message }}</div>
+                  </template>
                 </div>
               </div>
+
+              <!-- No messages state -->
+              <div v-if="chatMessages.length === 0 && !isLoadingHistory" class="no-messages">
+                <p>아직 메시지가 없습니다. 첫 번째 메시지를 보내보세요!</p>
+              </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div v-if="isLoggedIn" class="chat-input">
+              <div v-if="!isConnected" class="connection-status">
+                <small class="text-warning">채팅 서버에 연결 중...</small>
+              </div>
+              <div class="input-group">
+                <input
+                  v-model="newMessage"
+                  @keypress.enter="sendMessage"
+                  :disabled="!isConnected"
+                  placeholder="메시지를 입력하세요..."
+                  class="message-input"
+                />
+                <button
+                  @click="sendMessage"
+                  :disabled="!newMessage.trim() || !isConnected"
+                  class="send-button"
+                >
+                  전송
+                </button>
+              </div>
+            </div>
+
+            <!-- Login prompt for non-authenticated users -->
+            <div v-else class="login-prompt">
+              <p>채팅에 참여하려면 로그인이 필요합니다.</p>
+              <router-link to="/login" class="login-button">로그인하기</router-link>
             </div>
           </div>
         </div>
@@ -423,213 +126,633 @@ export default {
   </div>
 </template>
 
+<script>
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
+import { useStore } from 'vuex'
+import NavBar from '@/components/common/NavBar.vue'
+import { getAttractionDetail } from '@/api/attractions'
+import { connectChatRoom, disconnectChat, sendChatMessage, getChatMessages } from '@/api/chat'
+
+export default {
+  name: 'AttractionDetailView',
+  components: {
+    NavBar,
+  },
+  setup() {
+    const route = useRoute()
+    const store = useStore()
+
+    // State
+    const attraction = ref(null)
+    const isLoading = ref(true)
+    const errorMessage = ref('')
+    const chatMessages = ref([])
+    const newMessage = ref('')
+    const stompClient = ref(null)
+    const chatMessagesContainer = ref(null)
+    const chatRoomId = ref(null)
+    const isLoadingHistory = ref(false)
+    const cursor = ref('latest')
+    const hasMoreMessages = ref(true)
+    const isConnected = ref(false)
+
+    // Computed
+    const attractionId = computed(() => route.params.id)
+    const isLoggedIn = computed(() => store.getters['auth/isLoggedIn'])
+    const currentUser = computed(() => store.getters['auth/currentUser'])
+    const userName = computed(() => currentUser.value?.username || 'Anonymous')
+
+    // Methods
+    const fetchAttractionDetail = async () => {
+      isLoading.value = true
+      errorMessage.value = ''
+
+      try {
+        const response = await getAttractionDetail(attractionId.value)
+
+        attraction.value = response.data
+        chatRoomId.value = attractionId.value
+
+        if (isLoggedIn.value) {
+          await connectToChat()
+        }
+      } catch (error) {
+        console.error('Error fetching attraction details:', error)
+
+        if (error.response?.status === 401) {
+          errorMessage.value = '로그인하면 더 많은 정보와 채팅 기능을 이용할 수 있습니다.'
+          attraction.value = {
+            id: attractionId.value,
+            title: '관광지 정보',
+            description: '로그인 후 상세 정보를 확인하세요.',
+          }
+        } else {
+          errorMessage.value = '여행지 정보를 불러오는 중 오류가 발생했습니다.'
+        }
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    const connectToChat = async () => {
+      if (!isLoggedIn.value || !chatRoomId.value) return
+
+      try {
+        // Load initial messages
+        await loadChatMessages('latest')
+
+        // Connect to WebSocket
+        stompClient.value = connectChatRoom(chatRoomId.value, onMessageReceived)
+
+        // Send ENTER message after connection
+        setTimeout(() => {
+          sendEnterMessage()
+        }, 1000)
+
+        isConnected.value = true
+      } catch (error) {
+        console.error('Error connecting to chat:', error)
+        isConnected.value = false
+      }
+    }
+
+    const loadChatMessages = async (cursorValue = 'latest') => {
+      if (isLoadingHistory.value || !hasMoreMessages.value) return
+
+      try {
+        isLoadingHistory.value = true
+        const response = await getChatMessages(chatRoomId.value, cursorValue)
+
+        const data = response.data
+        const messages = data.chatMessageList || []
+
+        if (messages.length === 0) {
+          hasMoreMessages.value = false
+          return
+        }
+
+        // Process messages with isMe flag and ensure all properties are present
+        const processedMessages = messages.map((message) => ({
+          id: message.id,
+          sender: message.sender,
+          message: message.message,
+          type: message.type || 'TALK',
+          roomId: message.roomId,
+          isMe: message.sender === userName.value,
+          timestamp: message.timestamp || new Date().toISOString(),
+        }))
+
+        // Find the lowest ID for cursor
+        const lowestId = Math.min(...messages.map((m) => m.id))
+
+        // Check if we've reached the beginning (ID = 1)
+        if (lowestId === 1) {
+          hasMoreMessages.value = false
+        }
+
+        if (cursorValue === 'latest') {
+          // Initial load - sort by ID ascending (oldest to newest)
+          const sortedMessages = processedMessages.sort((a, b) => a.id - b.id)
+          chatMessages.value = [...sortedMessages] // Create new array for reactivity
+          cursor.value = lowestId
+          await scrollToBottom()
+        } else {
+          // Loading previous messages - prepend to beginning
+          const scrollHeight = chatMessagesContainer.value?.scrollHeight || 0
+
+          // Sort old messages and prepend them
+          const sortedOldMessages = processedMessages.sort((a, b) => a.id - b.id)
+
+          // Create a new array to trigger Vue reactivity properly
+          const updatedMessages = [...sortedOldMessages, ...chatMessages.value]
+          chatMessages.value = updatedMessages
+          cursor.value = lowestId
+
+          // Maintain scroll position
+          await nextTick()
+          if (chatMessagesContainer.value) {
+            const newScrollHeight = chatMessagesContainer.value.scrollHeight
+            chatMessagesContainer.value.scrollTop = newScrollHeight - scrollHeight
+          }
+        }
+      } catch (error) {
+        console.error('Error loading chat messages:', error)
+        if (cursorValue === 'latest') {
+          chatMessages.value = []
+        }
+      } finally {
+        isLoadingHistory.value = false
+      }
+    }
+
+    const sendEnterMessage = async () => {
+      if (!isLoggedIn.value || !chatRoomId.value) return
+
+      try {
+        const enterMessage = {
+          type: 'ENTER',
+          roomId: parseInt(chatRoomId.value),
+          sender: userName.value,
+          message: `${userName.value}님이 채팅방에 입장했습니다.`,
+        }
+
+        await sendChatMessage(enterMessage)
+      } catch (error) {
+        console.error('Error sending enter message:', error)
+      }
+    }
+
+    const onMessageReceived = (message) => {
+      const normalizedMessage = {
+        id: message.id,
+        sender: message.sender,
+        message: message.message,
+        type: message.type || 'TALK',
+        roomId: message.roomId,
+        isMe: message.sender === userName.value,
+        timestamp: message.timestamp || new Date().toISOString(),
+      }
+
+      // Simply add new message to the end (no sorting needed for real-time messages)
+      chatMessages.value.push(normalizedMessage)
+
+      scrollToBottom()
+    }
+
+    const sendMessage = async () => {
+      if (!newMessage.value.trim() || !isLoggedIn.value || !isConnected.value) return
+
+      try {
+        const messageData = {
+          type: 'TALK',
+          roomId: parseInt(chatRoomId.value),
+          sender: userName.value,
+          message: newMessage.value.trim(),
+        }
+
+        await sendChatMessage(messageData)
+        newMessage.value = ''
+      } catch (error) {
+        console.error('Error sending message:', error)
+      }
+    }
+
+    const handleScroll = () => {
+      if (!chatMessagesContainer.value || isLoadingHistory.value || !hasMoreMessages.value) return
+
+      const { scrollTop } = chatMessagesContainer.value
+
+      // Load previous messages when scrolled to top
+      // Only load if cursor is a valid number (not 'latest')
+      if (scrollTop === 0 && typeof cursor.value === 'number' && cursor.value > 1) {
+        loadChatMessages(cursor.value)
+      }
+    }
+
+    const formatTime = (timestamp) => {
+      if (!timestamp) return ''
+      const date = new Date(timestamp)
+      return date.toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    }
+
+    const scrollToBottom = async () => {
+      await nextTick()
+      if (chatMessagesContainer.value) {
+        // Force scroll to bottom with a small delay to ensure DOM is updated
+        setTimeout(() => {
+          chatMessagesContainer.value.scrollTop = chatMessagesContainer.value.scrollHeight
+        }, 50)
+      }
+    }
+
+    const sendLeaveMessage = async () => {
+      if (!isLoggedIn.value || !chatRoomId.value || !isConnected.value) return
+
+      try {
+        const leaveMessage = {
+          type: 'LEAVE',
+          roomId: parseInt(chatRoomId.value),
+          sender: userName.value,
+          message: `${userName.value}님이 채팅방을 나갔습니다.`,
+        }
+
+        await sendChatMessage(leaveMessage)
+      } catch (error) {
+        console.error('Error sending leave message:', error)
+      }
+    }
+
+    const disconnectFromChat = async () => {
+      if (stompClient.value && isConnected.value) {
+        await sendLeaveMessage()
+        disconnectChat()
+        stompClient.value = null
+        isConnected.value = false
+      }
+    }
+
+    // Lifecycle
+    onMounted(() => {
+      fetchAttractionDetail()
+    })
+
+    onBeforeUnmount(() => {
+      disconnectFromChat()
+    })
+
+    return {
+      // State
+      attraction,
+      isLoading,
+      errorMessage,
+      chatMessages,
+      newMessage,
+      chatMessagesContainer,
+      chatRoomId,
+      isLoadingHistory,
+      cursor,
+      hasMoreMessages,
+      isConnected,
+
+      // Computed
+      attractionId,
+      isLoggedIn,
+      currentUser,
+      userName,
+
+      // Methods
+      fetchAttractionDetail,
+      connectToChat,
+      loadChatMessages,
+      sendEnterMessage,
+      onMessageReceived,
+      sendMessage,
+      handleScroll,
+      formatTime,
+      scrollToBottom,
+      sendLeaveMessage,
+      disconnectFromChat,
+    }
+  },
+}
+</script>
+
 <style scoped>
-.attraction-detail-view {
-  min-height: 100vh;
-  background-color: var(--background-color);
+.attraction-detail-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
 }
 
-.loading-container,
-.error-container {
-  height: 70vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+.loading {
   text-align: center;
+  padding: 50px;
+  font-size: 18px;
 }
 
-.attraction-header {
-  background-color: var(--primary-color);
-  color: white;
-  padding: 2rem 0;
-  margin-bottom: 2rem;
+.error {
+  text-align: center;
+  padding: 50px;
+  color: #e74c3c;
+  font-size: 18px;
 }
 
-.attraction-title {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-  font-weight: 700;
+.main-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  min-height: 600px;
 }
 
-.attraction-meta {
-  display: flex;
-  gap: 1rem;
-  font-size: 1.1rem;
-}
-
-.attraction-category {
-  background-color: var(--primary-dark);
-  padding: 0.2rem 0.7rem;
-  border-radius: 4px;
-}
-
-.attraction-main {
-  background-color: white;
+.attraction-section {
+  background: white;
   border-radius: 8px;
-  padding: 2rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  margin-bottom: 2rem;
-}
-
-.attraction-image img {
-  width: 100%;
-  border-radius: 4px;
-  margin-bottom: 1.5rem;
-}
-
-.attraction-description,
-.attraction-info,
-.attraction-map {
-  margin-bottom: 2rem;
-}
-
-.attraction-description h2,
-.attraction-info h2,
-.attraction-map h2 {
-  color: var(--primary-color);
-  margin-bottom: 1rem;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.info-item {
-  margin-bottom: 0.5rem;
-}
-
-.detail-map-container {
-  height: 300px;
-  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 
-.attraction-sidebar {
-  position: sticky;
-  top: 2rem;
+.attraction-card {
+  padding: 30px;
 }
 
-.parking-info,
-.chat-container {
-  background-color: white;
+.attraction-title {
+  font-size: 32px;
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 20px;
+  border-bottom: 3px solid #3498db;
+  padding-bottom: 10px;
+}
+
+.attraction-info p {
+  margin-bottom: 15px;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.attraction-info a {
+  color: #3498db;
+  text-decoration: none;
+}
+
+.attraction-info a:hover {
+  text-decoration: underline;
+}
+
+.chat-section {
+  background: white;
   border-radius: 8px;
-  padding: 1.5rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  margin-bottom: 1.5rem;
-}
-
-.parking-info h2,
-.chat-container h2 {
-  color: var(--primary-color);
-  margin-bottom: 1rem;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.available-spaces {
-  font-size: 1.1rem;
-  margin-bottom: 1rem;
-}
-
-.reservation-form h3 {
-  margin-bottom: 1rem;
-  font-size: 1.2rem;
-  color: var(--primary-dark);
-}
-
-.chat-box {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
-  height: 400px;
+}
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-header {
+  padding: 20px;
+  border-bottom: 1px solid #ecf0f1;
+  background: #f8f9fa;
+}
+
+.chat-header h3 {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+}
+
+.login-notice {
+  margin: 0;
+  color: #7f8c8d;
+  font-style: italic;
 }
 
 .chat-messages {
-  flex-grow: 1;
+  flex: 1;
+  padding: 20px;
   overflow-y: auto;
-  padding: 1rem;
-  background-color: #f8f9fa;
-  border-radius: 4px;
-  margin-bottom: 1rem;
+  max-height: 400px;
+  min-height: 300px;
 }
 
-.chat-message {
-  margin-bottom: 1rem;
+.message {
+  margin-bottom: 15px;
+  display: flex;
+}
+
+.message.own-message {
+  justify-content: flex-end;
+}
+
+.message.system-message {
+  justify-content: center;
 }
 
 .message-content {
-  display: inline-block;
-  padding: 0.5rem 1rem;
+  max-width: 70%;
+  padding: 12px 16px;
   border-radius: 18px;
-  max-width: 80%;
-  background-color: #e9e9eb;
+  background: #ecf0f1;
 }
 
-.my-message .message-content {
-  float: right;
-  background-color: var(--primary-light);
+.own-message .message-content {
+  background: #3498db;
   color: white;
 }
 
-.message-sender {
-  font-weight: 600;
-  font-size: 0.85rem;
-  margin-bottom: 0.25rem;
+.system-content {
+  background: #f39c12;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-style: italic;
 }
 
-.system-message .message-content {
-  background-color: rgba(0, 0, 0, 0.1);
-  color: var(--text-light);
+.system-text {
   text-align: center;
-  width: 100%;
-  padding: 0.3rem;
-  font-size: 0.9rem;
+  font-size: 12px;
+}
+
+.loading-indicator {
+  text-align: center;
+  padding: 10px;
+  font-style: italic;
+  color: #7f8c8d;
+}
+
+.no-messages {
+  text-align: center;
+  padding: 40px 20px;
+  color: #7f8c8d;
+  font-style: italic;
+}
+
+.no-messages p {
+  margin: 0;
+}
+
+.message-content {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #ecf0f1;
+}
+
+.own-message .message-content {
+  background: #3498db;
+  color: white;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.username {
+  font-weight: bold;
+}
+
+.own-message .username {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.timestamp {
+  opacity: 0.7;
+}
+
+.message-text {
+  word-wrap: break-word;
+  line-height: 1.4;
 }
 
 .chat-input {
-  display: flex;
-  gap: 0.5rem;
+  padding: 20px;
+  border-top: 1px solid #ecf0f1;
+  background: #f8f9fa;
 }
 
+.connection-status {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.text-warning {
+  color: #f39c12;
+  font-style: italic;
+}
+
+.input-group {
+  display: flex;
+  gap: 10px;
+}
+
+.message-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 25px;
+  outline: none;
+  font-size: 14px;
+}
+
+.message-input:focus {
+  border-color: #3498db;
+}
+
+.send-button {
+  padding: 12px 20px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 25px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  transition: background 0.3s;
+}
+
+.send-button:hover:not(:disabled) {
+  background: #2980b9;
+}
+
+.send-button:disabled {
+  background: #bdc3c7;
+  cursor: not-allowed;
+}
+
+/* Login prompt styles */
 .login-prompt {
   text-align: center;
-  padding: 1rem;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-top: 15px;
 }
 
-.alert {
-  padding: 0.75rem 1.25rem;
-  margin-bottom: 1rem;
-  border: 1px solid transparent;
-  border-radius: 0.25rem;
+.login-prompt p {
+  margin-bottom: 15px;
+  color: #666;
 }
 
-.alert-danger {
-  background-color: #f8d7da;
-  color: #721c24;
-  border-color: #f5c6cb;
+.login-button {
+  display: inline-block;
+  padding: 10px 20px;
+  background: #3498db;
+  color: white;
+  text-decoration: none;
+  border-radius: 25px;
+  font-weight: bold;
+  transition: background 0.3s;
 }
 
-.alert-success {
-  background-color: #d4edda;
-  color: #155724;
-  border-color: #c3e6cb;
+.login-button:hover {
+  background: #2980b9;
 }
 
+.login-notice {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+
+.error-message {
+  background: #fee;
+  color: #c33;
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 4px solid #e74c3c;
+  margin: 20px 0;
+}
+
+/* Responsive Design */
 @media (max-width: 768px) {
-  .attraction-header {
-    padding: 1.5rem 0;
+  .main-content {
+    grid-template-columns: 1fr;
+    gap: 20px;
   }
 
   .attraction-title {
-    font-size: 2rem;
+    font-size: 24px;
   }
 
-  .attraction-main,
-  .parking-info,
-  .chat-container {
-    padding: 1rem;
+  .attraction-card {
+    padding: 20px;
   }
 
-  .chat-box {
-    height: 300px;
+  .chat-messages {
+    max-height: 300px;
+    min-height: 250px;
   }
 }
 </style>

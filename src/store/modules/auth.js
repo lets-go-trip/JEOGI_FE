@@ -29,22 +29,28 @@ export default {
         const response = await loginApi(credentials)
         console.log('Login API response:', response.data)
 
-        // Handle different response formats
-        // If response contains user object, use it
-        if (response.data.user) {
+        // Handle LoginResponse format: {message, user: {username}}
+        if (response.data.message === '로그인 성공' && response.data.user) {
+          const userData = response.data.user
+          commit('SET_USER', userData)
+          commit('SET_LOGGED_IN', true)
+
+          // Store user info in localStorage for persistence
+          localStorage.setItem('user', JSON.stringify(userData))
+          localStorage.setItem('isLoggedIn', 'true')
+        }
+        // Handle other response formats if needed
+        else if (response.data.user) {
           commit('SET_USER', response.data.user)
           commit('SET_LOGGED_IN', true)
 
-          // If response contains token, store it
+          localStorage.setItem('user', JSON.stringify(response.data.user))
+          localStorage.setItem('isLoggedIn', 'true')
+
           if (response.data.token) {
             commit('SET_TOKEN', response.data.token)
             localStorage.setItem('token', response.data.token)
           }
-        }
-        // Fallback for backend that returns {message, user} format
-        else if (response.data.message === '로그인 성공') {
-          commit('SET_USER', { username: response.data.user?.username || 'user' })
-          commit('SET_LOGGED_IN', true)
         }
 
         return Promise.resolve(response)
@@ -59,6 +65,8 @@ export default {
         await logoutApi()
         commit('CLEAR_AUTH')
         localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        localStorage.removeItem('isLoggedIn')
         return Promise.resolve()
       } catch (error) {
         return Promise.reject(error)
@@ -86,10 +94,23 @@ export default {
 
     autoLogin({ commit }) {
       const token = localStorage.getItem('token')
+      const user = localStorage.getItem('user')
+      const isLoggedIn = localStorage.getItem('isLoggedIn')
+
       if (token) {
         commit('SET_TOKEN', token)
-        commit('SET_LOGGED_IN', true)
-        // You might want to validate the token or get user data here
+      }
+
+      if (user && isLoggedIn === 'true') {
+        try {
+          const userData = JSON.parse(user)
+          commit('SET_USER', userData)
+          commit('SET_LOGGED_IN', true)
+        } catch (error) {
+          console.error('Error parsing stored user data:', error)
+          localStorage.removeItem('user')
+          localStorage.removeItem('isLoggedIn')
+        }
       }
     },
   },
