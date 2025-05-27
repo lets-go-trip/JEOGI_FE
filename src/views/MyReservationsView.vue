@@ -71,8 +71,8 @@ export default {
       try {
         await cancelReservation(reservationId)
 
-        // Remove the cancelled reservation from the list
-        this.reservations = this.reservations.filter((res) => res.id !== reservationId)
+        // 예약 취소 성공 후 전체 리스트 새로고침
+        await this.fetchReservations()
 
         this.cancelSuccess = true
         setTimeout(() => {
@@ -147,13 +147,13 @@ export default {
 
             <div class="reservation-actions">
               <button
-                @click="viewAttractionDetails(reservation.parkingLot.attraction.id)"
+                @click="viewAttractionDetails(reservation.parkingLotId)"
                 class="btn btn-outline"
               >
                 여행지 정보 보기
               </button>
 
-              <button @click="handleCancelReservation(reservation.id)" class="btn btn-danger">
+              <button @click="handleCancelReservation(reservation.reservationId)" class="btn btn-danger">
                 예약 취소
               </button>
             </div>

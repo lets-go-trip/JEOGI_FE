@@ -22,6 +22,12 @@ export default {
     const isLoadingContentTypes = ref(false)
     const map = ref(null)
     const markers = ref([])
+    const searchRange = ref(100) // 검색 범위 (km 단위)
+    const sliderValue = ref(50) // 슬라이더의 선형 값 (1-100)
+    const isRangeSearchEnabled = ref(false) // 검색 범위 활성화 여부
+    const rangeCircle = ref(null) // 검색 범위를 나타내는 원
+    const circleHideTimer = ref(null) // 원을 숨기기 위한 타이머
+    const isAdvancedSearchVisible = ref(false) // 세부 검색 조건 표시 여부
 
     return {
       searchTerm,
@@ -37,6 +43,12 @@ export default {
       isLoadingContentTypes,
       map,
       markers,
+      searchRange,
+      sliderValue,
+      isRangeSearchEnabled,
+      rangeCircle,
+      circleHideTimer,
+      isAdvancedSearchVisible,
     }
   },
   computed: {
@@ -70,21 +82,54 @@ export default {
     }
   },
   methods: {
+    // 슬라이더 값을 로그 스케일로 변환 (1-100 → 1.0-100.0km)
+    convertToLogScale(sliderValue) {
+      // 슬라이더 값 1-100을 0-1 범위로 정규화
+      const normalized = (sliderValue - 1) / 99
+      
+      // 로그 스케일 변환: 1km ~ 100km
+      // log(1) = 0, log(100) = 2이므로 2를 곱함
+      const logValue = Math.pow(10, normalized * 2)
+      
+      // 소수점 첫째 자리까지 반올림하여 반환
+      return Math.round(logValue * 10) / 10
+    },
+
+    // 로그 스케일 값을 슬라이더 값으로 역변환
+    convertFromLogScale(logValue) {
+      // 1.0-100.0km 범위를 0-2 로그 범위로 변환
+      const logNormalized = Math.log10(logValue) / 2
+      
+      // 0-1 범위를 1-100 슬라이더 범위로 변환
+      const sliderValue = logNormalized * 99 + 1
+      
+      return Math.round(sliderValue)
+    },
+
+    // 슬라이더 값이 변경될 때 실제 거리 업데이트
+    updateSearchRangeFromSlider() {
+      this.searchRange = this.convertToLogScale(this.sliderValue)
+    },
     async handleSearch() {
       this.isLoading = true
       this.errorMessage = ''
       this.clearMarkers()
 
+      
+
       const params = {
-        //query: this.searchTerm,
+        query: this.searchTerm,
         metropolitanCode: this.selectedRegion !== 'all' ? this.selectedRegion : null,
         localCode: this.selectedLocal !== 'all' ? this.selectedLocal : null,
         contentTypeId: this.selectedContentType !== 'all' ? this.selectedContentType : null,
-        isRangeSearch: false,
+        isRangeSearch: this.isRangeSearchEnabled, // 체크박스 상태에 따라 결정
         latitude: this.map.getCenter().getLat(),
         longitude: this.map.getCenter().getLng(),
-        range: 300,
+        range: this.searchRange, // 슬라이더에서 설정된 범위 값 사용
       }
+
+      // 검색 버튼을 눌렀을 때 검색 범위 설정을 false로 만드는 기능
+      this.isRangeSearchEnabled = false
 
       try {
         const response = await searchAttractions(params)
@@ -242,6 +287,12 @@ export default {
 
           console.log('Map initialized successfully')
           this.mapInitialized = true
+          
+          // 지도 초기화 후 검색 범위 원 표시 및 타이머 설정
+          if (this.isRangeSearchEnabled) {
+            this.updateRangeCircle()
+            this.scheduleCircleHide()
+          }
         } else {
           console.error('Kakao maps not loaded')
           this.displayMapError('지도를 불러오는데 실패했습니다. 잠시 후 다시 시도해주세요.')
@@ -288,6 +339,96 @@ export default {
     clearMarkers() {
       this.markers.forEach((marker) => marker.setMap(null))
       this.markers = []
+    },
+
+    // 검색 범위 원 업데이트
+    updateRangeCircle() {
+      if (!this.map) return
+
+      // 기존 원 제거
+      if (this.rangeCircle) {
+        this.rangeCircle.setMap(null)
+        this.rangeCircle = null
+      }
+
+      // 검색 범위가 활성화된 경우에만 원 표시
+      if (this.isRangeSearchEnabled) {
+        const center = this.map.getCenter()
+        
+        this.rangeCircle = new window.kakao.maps.Circle({
+          center: center, // 지도의 중심 좌표
+          radius: this.searchRange * 1000, // km를 미터로 변환
+          strokeWeight: 2, // 선의 두께
+          strokeColor: '#4ECDCC', // 선의 색깔 (primary 색상)
+          strokeOpacity: 0.8, // 선의 불투명도
+          strokeStyle: 'solid', // 선의 스타일
+          fillColor: '#4ECDCC', // 채우기 색깔
+          fillOpacity: 0.1 // 채우기 불투명도
+        })
+
+        // 지도에 원을 표시
+        this.rangeCircle.setMap(this.map)
+      }
+    },
+
+    // 원을 숨기는 메서드
+    hideRangeCircle() {
+      if (this.rangeCircle) {
+        this.rangeCircle.setMap(null)
+        this.rangeCircle = null
+      }
+    },
+
+    // 타이머를 클리어하는 메서드
+    clearCircleHideTimer() {
+      if (this.circleHideTimer) {
+        clearTimeout(this.circleHideTimer)
+        this.circleHideTimer = null
+      }
+    },
+
+    // 타이머를 설정하여 일정 시간 후 원을 숨기는 메서드
+    scheduleCircleHide() {
+      // 기존 타이머가 있으면 클리어
+      this.clearCircleHideTimer()
+      
+      // 검색 범위가 활성화된 경우에만 타이머 설정
+      if (this.isRangeSearchEnabled) {
+        this.circleHideTimer = setTimeout(() => {
+          this.hideRangeCircle()
+          this.circleHideTimer = null
+        }, 1000) // 3초 후 원을 숨김
+      }
+    },
+
+    // 검색 범위 변경 핸들러
+    onRangeChange() {
+      // 슬라이더 값을 로그 스케일로 변환하여 실제 거리 업데이트
+      this.updateSearchRangeFromSlider()
+      
+      // 원을 업데이트하고 타이머를 재설정
+      this.updateRangeCircle()
+      this.scheduleCircleHide()
+    },
+
+    // 검색 범위 활성화 상태 변경 핸들러
+    onRangeSearchToggle() {
+      // 타이머 클리어
+      this.clearCircleHideTimer()
+      
+      if (this.isRangeSearchEnabled) {
+        // 체크박스가 활성화되면 원을 표시하고 타이머 설정
+        this.updateRangeCircle()
+        this.scheduleCircleHide()
+      } else {
+        // 체크박스가 비활성화되면 원을 즉시 숨김
+        this.hideRangeCircle()
+      }
+    },
+
+    // 세부 검색 조건 토글
+    toggleAdvancedSearch() {
+      this.isAdvancedSearchVisible = !this.isAdvancedSearchVisible
     },
 
     updateMap() {
@@ -403,12 +544,25 @@ export default {
       }
 
       this.clearMarkers()
+      
+      // 타이머 클리어
+      this.clearCircleHideTimer()
+      
+      // 검색 범위 원 제거
+      if (this.rangeCircle) {
+        this.rangeCircle.setMap(null)
+        this.rangeCircle = null
+      }
+      
       this.map = null
     },
   },
 
   async mounted() {
     console.log('SearchView 컴포넌트 마운트됨')
+
+    // 초기 슬라이더 값을 현재 검색 범위에 맞게 설정
+    this.sliderValue = this.convertFromLogScale(this.searchRange)
 
     // 여행지 유형 옵션 로드 (독립적으로 실행)
     this.loadContentTypeOptions()
@@ -447,67 +601,120 @@ export default {
       <div class="container">
         <h1 class="search-title">여행지 검색</h1>
         <div class="search-form">
-          <div class="search-form-row">
-            <div class="search-form-field region-select">
-              <select v-model="selectedRegion" @change="onRegionChange" class="form-control">
-                <option
-                  v-for="option in metropolitanOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="search-form-field local-select">
-              <select
-                v-model="selectedLocal"
-                class="form-control"
-                :disabled="selectedRegion === 'all' || isLoadingLocals"
-              >
-                <option value="all">
-                  {{ isLoadingLocals ? '로딩 중...' : '전체 지역' }}
-                </option>
-                <option v-for="local in localOptions" :key="local.value" :value="local.value">
-                  {{ local.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="search-form-field content-type-select">
-              <select
-                v-model="selectedContentType"
-                class="form-control"
-                :disabled="isLoadingContentTypes"
-              >
-                <option value="all">
-                  {{ isLoadingContentTypes ? '로딩 중...' : '전체 유형' }}
-                </option>
-                <option
-                  v-for="contentType in contentTypeOptions"
-                  :key="contentType.value"
-                  :value="contentType.value"
-                >
-                  {{ contentType.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="search-form-field keyword-input">
+          <!-- 기본 검색 바 -->
+          <div class="basic-search-row">
+            <div class="keyword-input-field">
               <input
                 v-model="searchTerm"
                 type="text"
-                class="form-control"
+                class="form-control keyword-input"
                 placeholder="여행지 이름이나 키워드를 입력하세요"
                 @keyup.enter="handleSearch"
               />
             </div>
-
-            <div class="search-form-field search-button">
-              <button @click="handleSearch" class="btn btn-primary" :disabled="isLoading">
+            <div class="search-actions">
+              <button @click="handleSearch" class="btn btn-primary search-btn" :disabled="isLoading">
                 {{ isLoading ? '검색 중...' : '검색' }}
               </button>
+              <button @click="toggleAdvancedSearch" class="btn btn-secondary advanced-toggle-btn">
+                <span class="advanced-text">세부조건</span>
+                <span class="toggle-icon">{{ isAdvancedSearchVisible ? '▲' : '▼' }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 세부 검색 조건 패널 -->
+          <div v-show="isAdvancedSearchVisible" class="advanced-search-panel">
+            <div class="panel-header">
+              <h3 class="panel-title">세부 검색 조건</h3>
+            </div>
+            
+            <div class="advanced-options">
+              <!-- 지역 및 유형 선택 -->
+              <div class="options-row">
+                <div class="option-group">
+                  <label class="option-label">지역</label>
+                  <div class="region-selects">
+                    <select v-model="selectedRegion" @change="onRegionChange" class="form-control region-select">
+                      <option
+                        v-for="option in metropolitanOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                    
+                    <select
+                      v-model="selectedLocal"
+                      class="form-control local-select"
+                      :disabled="selectedRegion === 'all' || isLoadingLocals"
+                    >
+                      <option value="all">
+                        {{ isLoadingLocals ? '로딩 중...' : '전체 지역' }}
+                      </option>
+                      <option v-for="local in localOptions" :key="local.value" :value="local.value">
+                        {{ local.label }}
+                      </option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="option-group">
+                  <label class="option-label">유형</label>
+                  <select
+                    v-model="selectedContentType"
+                    class="form-control content-type-select"
+                    :disabled="isLoadingContentTypes"
+                  >
+                    <option value="all">
+                      {{ isLoadingContentTypes ? '로딩 중...' : '전체 유형' }}
+                    </option>
+                    <option
+                      v-for="contentType in contentTypeOptions"
+                      :key="contentType.value"
+                      :value="contentType.value"
+                    >
+                      {{ contentType.label }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- 검색 범위 설정 -->
+              <div class="range-section">
+                <div class="range-checkbox-wrapper">
+                  <label class="checkbox-label">
+                    <input
+                      v-model="isRangeSearchEnabled"
+                      type="checkbox"
+                      class="range-checkbox"
+                      @change="onRangeSearchToggle"
+                    />
+                    <span class="checkbox-text">검색 범위 설정 사용</span>
+                  </label>
+                </div>
+                
+                <div v-if="isRangeSearchEnabled" class="range-slider-field">
+                  <label class="range-label">검색 범위: {{ searchRange.toFixed(1) }}km</label>
+                  <div class="range-slider-wrapper">
+                    <input
+                      v-model.number="sliderValue"
+                      type="range"
+                      min="1"
+                      max="100"
+                      step="1"
+                      class="range-slider"
+                      @input="onRangeChange"
+                    />
+                    <div class="range-marks">
+                      <span class="range-mark">1km</span>
+                      <span class="range-mark">10km</span>
+                      <span class="range-mark">100km</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -524,8 +731,13 @@ export default {
           <div class="results-section">
             <div class="search-results">
               <h2 class="results-title">검색 결과</h2>
-              <div v-if="searchResults.length != 0">
-                {{ searchResults.length }}개, {{ fetchTime }}초 걸림
+              <div v-if="searchResults.length != 0" class="results-info">
+                <div class="results-count">
+                  {{ searchResults.length }}개, {{ fetchTime }}초 걸림
+                </div>
+                <div v-if="searchResults.length === 500" class="results-limit-notice">
+                  검색 결과가 많아 일부만 표시됩니다.
+                </div>
               </div>
 
               <div v-if="errorMessage" class="alert alert-danger">
@@ -539,7 +751,7 @@ export default {
 
               <div v-else-if="searchResults.length === 0" class="no-results">
                 <p>검색 결과가 없습니다.</p>
-                <small>다른 키워드로 검색해보세요.</small>
+                <small>Tip: 다른 키워드, 조건으로 검색해보세요.</small>
               </div>
 
               <div v-else class="results-list">
@@ -553,8 +765,7 @@ export default {
                   <p class="result-address">{{ result.addr1 }} {{ result.addr2 }}</p>
                   <div class="result-actions">
                     <router-link :to="`/attraction/${result.id}`" class="btn btn-outline btn-sm"
-                      >상세 보기</router-link
-                    >
+                      >상세 보기</router-link>
                   </div>
                 </div>
               </div>
@@ -611,7 +822,7 @@ export default {
 }
 
 .content-type-select {
-  width: 15%;
+  width: 90%;
 }
 
 .region-select select,
@@ -655,6 +866,278 @@ export default {
   font-weight: 500;
   border-radius: 6px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* 기본 검색 바 스타일 */
+.basic-search-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0;
+}
+
+.keyword-input-field {
+  flex: 1;
+}
+
+.keyword-input {
+  height: 48px;
+  font-size: 1.05rem;
+  border-radius: 6px;
+  padding: 0 15px;
+  border: none;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  width: 100%;
+}
+
+.search-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.search-btn {
+  height: 48px;
+  padding: 0 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 500;
+  border-radius: 6px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}
+
+.advanced-toggle-btn {
+  height: 48px;
+  padding: 0 1rem;
+  font-size: 0.95rem;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.advanced-toggle-btn:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.advanced-text {
+  font-weight: 500;
+}
+
+.toggle-icon {
+  font-size: 0.8rem;
+  transition: transform 0.3s ease;
+}
+
+/* 세부 검색 패널 스타일 */
+.advanced-search-panel {
+  margin-top: 1.5rem;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1.5rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 500px;
+  }
+}
+
+.panel-header {
+  margin-bottom: 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 0.8rem;
+}
+
+.panel-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: white;
+  margin: 0;
+}
+
+.advanced-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* 옵션 행 스타일 */
+.options-row {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+}
+
+.option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.option-group:first-child {
+  flex: 2; /* 지역 선택 그룹 */
+}
+
+.option-group:last-child {
+  flex: 2; /* 여행지 유형 그룹 - 지역 선택과 동일한 크기 */
+}
+
+.option-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 0.5rem;
+}
+
+.region-selects {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.region-select,
+.local-select,
+.content-type-select {
+  height: 40px;
+  font-size: 0.95rem;
+  border-radius: 6px;
+  border: none;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  background-color: white;
+  flex: 1;
+}
+
+.local-select:disabled,
+.content-type-select:disabled {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+/* 검색 범위 섹션 스타일 */
+.range-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  padding-top: 1.5rem;
+}
+
+/* 체크박스 스타일 */
+.range-checkbox-wrapper {
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: white;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.range-checkbox {
+  margin-right: 0.8rem;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: white;
+}
+
+.checkbox-text {
+  user-select: none;
+}
+
+/* 범위 슬라이더 스타일 */
+.range-slider-field {
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 1rem;
+  border-radius: 6px;
+}
+
+.range-label {
+  display: block;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+  color: white;
+  text-align: center;
+}
+
+.range-slider-wrapper {
+  position: relative;
+}
+
+.range-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  outline: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.range-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+}
+
+.range-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.range-slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+}
+
+.range-marks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  padding: 0 0.5rem;
+}
+
+.range-mark {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
 }
 
 .search-content {
@@ -711,6 +1194,63 @@ export default {
   font-weight: 600;
   border-bottom: 2px solid var(--primary-light);
   padding-bottom: 0.8rem;
+}
+
+/* 검색 결과 정보 스타일 */
+.results-info {
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, #f8fffe 0%, #e8f9f8 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(78, 205, 196, 0.2);
+  box-shadow: 0 2px 8px rgba(78, 205, 196, 0.1);
+  overflow: hidden;
+}
+
+.results-count {
+  padding: 1rem 1.2rem;
+  background-color: rgba(78, 205, 196, 0.05);
+  font-size: 1rem;
+  color: var(--primary-dark);
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.results-count::before {
+  content: "📊";
+  font-size: 1.1rem;
+}
+
+.results-limit-notice {
+  padding: 1rem 1.2rem;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-top: 1px solid rgba(255, 152, 0, 0.2);
+  font-size: 0.95rem;
+  color: #ef6c00;
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: slideIn 0.3s ease-out;
+}
+
+.results-limit-notice::before {
+  content: "⚠️";
+  font-size: 1rem;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .result-item {
@@ -835,20 +1375,60 @@ export default {
     margin-bottom: 1.5rem;
   }
 
-  .search-form-row {
+  .basic-search-row {
     flex-direction: column;
+    gap: 0.8rem;
   }
 
-  .search-form-field {
-    width: 100% !important;
-    margin-bottom: 0.8rem;
+  .keyword-input-field {
+    width: 100%;
+  }
+
+  .search-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .search-btn,
+  .advanced-toggle-btn {
+    flex: 1;
+    height: 44px;
+  }
+
+  .options-row {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .option-group {
+    width: 100%;
+    flex: none;
+  }
+
+  .region-selects {
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
   .region-select,
   .local-select,
-  .content-type-select,
-  .keyword-input {
-    width: 100% !important;
+  .content-type-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .range-checkbox-wrapper,
+  .range-slider-field {
+    padding: 0.8rem;
+  }
+
+  .checkbox-label {
+    font-size: 0.9rem;
+  }
+
+  .range-label {
+    font-size: 0.9rem;
+    margin-bottom: 0.6rem;
   }
 
   .map-container {
@@ -862,6 +1442,23 @@ export default {
     max-height: 450px;
     border-radius: 8px;
     padding: 1.5rem;
+  }
+
+  /* 모바일에서 검색 결과 정보 박스 스타일 */
+  .results-info {
+    margin-bottom: 1.2rem;
+    border-radius: 8px;
+  }
+
+  .results-count,
+  .results-limit-notice {
+    padding: 0.8rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .results-count::before,
+  .results-limit-notice::before {
+    font-size: 1rem;
   }
 }
 </style>

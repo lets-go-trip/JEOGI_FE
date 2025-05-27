@@ -3,7 +3,7 @@
     <div class="container">
       <div class="navbar-brand">
         <router-link to="/" class="logo">
-          <span class="logo-text">TripChat</span>
+          <span class="logo-text">저기어때</span>
         </router-link>
       </div>
 

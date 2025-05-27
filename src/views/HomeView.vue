@@ -32,75 +32,27 @@ export default {
 
     <section class="features">
       <div class="container">
-        <h2 class="section-title">TripChat의 주요 기능</h2>
+        <h2 class="section-title">저기 어때?</h2>
         <div class="row">
           <div class="col-4">
             <div class="feature-card">
               <div class="feature-icon">🗺️</div>
-              <h3>여행지 검색</h3>
+              <h3>여기로 가자!</h3>
               <p>지도를 통해 다양한 여행지를 검색하고 정보를 확인해보세요.</p>
             </div>
           </div>
           <div class="col-4">
             <div class="feature-card">
               <div class="feature-icon">💬</div>
-              <h3>실시간 채팅</h3>
+              <h3>지금 거기는 어때?</h3>
               <p>여행을 함께 계획하고 있는 사람들과 실시간으로 대화하세요.</p>
             </div>
           </div>
           <div class="col-4">
             <div class="feature-card">
               <div class="feature-icon">🅿️</div>
-              <h3>주차장 예약</h3>
+              <h3>주차도 걱정 없이!</h3>
               <p>인기 관광지의 주차 공간을 미리 예약하여 여행을 더욱 편리하게 즐기세요.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="popular-destinations">
-      <div class="container">
-        <h2 class="section-title">인기 여행지</h2>
-        <div class="row">
-          <div class="col-3">
-            <div class="destination-card">
-              <div
-                class="destination-image"
-                style="background-image: url('https://via.placeholder.com/300x200?text=서울')"
-              ></div>
-              <h3>서울</h3>
-              <p>한국의 수도, 역사와 현대가 공존하는 도시</p>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="destination-card">
-              <div
-                class="destination-image"
-                style="background-image: url('https://via.placeholder.com/300x200?text=부산')"
-              ></div>
-              <h3>부산</h3>
-              <p>아름다운 해변과 산이 어우러진 제2의 도시</p>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="destination-card">
-              <div
-                class="destination-image"
-                style="background-image: url('https://via.placeholder.com/300x200?text=제주')"
-              ></div>
-              <h3>제주도</h3>
-              <p>화산섬의 독특한 자연환경을 가진 휴양지</p>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="destination-card">
-              <div
-                class="destination-image"
-                style="background-image: url('https://via.placeholder.com/300x200?text=경주')"
-              ></div>
-              <h3>경주</h3>
-              <p>신라의 천년 역사가 살아 숨쉬는 도시</p>
             </div>
           </div>
         </div>
