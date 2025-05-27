@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>여기가 - 여행지 추천 및 채팅</title>
+    <!-- 카카오맵 SDK -->
+    <script
+      type="text/javascript"
+      src="//dapi.kakao.com/v2/maps/sdk.js?appkey=7f5ff2c0c4a6e2ec642a8dc8b2fe4dc5&libraries=services"
+    ></script>
+    <script>
+      // Polyfill for global object in browser environment
+      if (typeof global === 'undefined') {
+        window.global = window
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
